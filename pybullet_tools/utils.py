@@ -1091,6 +1091,10 @@ def set_renderer(enable):
     client = CLIENT
     if not has_gui(client):
         return
+    # if enable:
+    #     print('\nset_renderer = True\n')
+    #     import traceback
+    #     traceback.format_exc()
     CLIENTS[client] = enable
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, int(enable), physicsClientId=client)
 
@@ -3047,6 +3051,8 @@ def get_collision_data(body, link=BASE_LINK):
     ## https://products.aspose.app/3d/conversion/dae-to-obj
     if not isinstance(body, int):
         body = body.body
+    if link is None:
+        link = BASE_LINK
     try:
         data = p.getCollisionShapeData(body, link, physicsClientId=CLIENT)
         return [CollisionShapeData(*tup) for tup in data]
@@ -3986,8 +3992,6 @@ def get_collision_fn(body, joints, obstacles=[], attachments=[], self_collisions
         # if len(moving_bodies) > 0:
         #     print('collision_fn', len(moving_bodies))
 
-        from pybullet_tools.bullet_utils import collided
-
         for body1, body2 in product(moving_bodies, obstacles):
             if body1.body == body2 or (body1.body, body2) in ignored_pairs:
                 continue
@@ -4011,14 +4015,18 @@ def get_collision_fn(body, joints, obstacles=[], attachments=[], self_collisions
                             #     print(f'checking collision between {obs_name} and bottle')
             if (not use_aabb or aabb_overlap(get_moving_aabb(body1), get_obstacle_aabb(body2))) \
                     and pairwise_collision(body1, body2, max_distance=max_distance, **kwargs):
-                #print(get_body_name(body1), get_body_name(body2))
+                # print(get_body_name(body1), get_body_name(body2))
                 if verbose:
                     from pybullet_tools.bullet_utils import nice  ## YANG
                     if not isinstance(body1, int):
-                        # print(f'get_collision_fn({body1.body}, {nice(q)}, {body2}) with attachments {attachments}')
                         body.print_full_body_conf(title='get_collision_fn')
                     else:
-                        print(body1, body2)
+                        print(f'collision_fn({body1}, {body2})')
+
+                    ## robot object
+                    if not isinstance(body, int):
+                        body.log_collisions(body2, source='collision_fn')
+
                     # if debug:
                     #     set_camera_target_body(body2)
                     #     set_renderer(True)

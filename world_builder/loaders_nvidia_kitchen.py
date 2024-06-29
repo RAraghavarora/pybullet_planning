@@ -1,11 +1,20 @@
+import pickle
 import random
+from collections import defaultdict
+
+from os.path import join
+
+import numpy as np
 
 from pybullet_tools.pr2_primitives import Conf, get_group_joints
 from pybullet_tools.utils import invert, get_name, pairwise_collision, sample_placement_on_aabb, \
     get_link_pose, get_pose, set_pose, sample_placement, aabb_from_extent_center
 from pybullet_tools.pose_utils import sample_pose, xyzyaw_to_pose, sample_center_top_surface
 from pybullet_tools.bullet_utils import nice, collided, equal
+from pybullet_tools.logging_utils import print_dict
+from pybullet_tools.general_streams import Position
 
+from world_builder.paths import DATABASES_PATH
 from world_builder.world_utils import sort_body_indices
 from world_builder.loaders import *
 
@@ -20,7 +29,8 @@ part_names = {
     'braiserlid': 'pot lid',
     'braiserbody': 'pot body',
     'braiser_bottom': 'pot bottom',
-    'front_right_stove': 'stove',
+    'front_left_stove': 'stove on the left',
+    'front_right_stove': 'stove on the right',
     'knob_joint_1': 'stove knob'
 }
 
@@ -30,8 +40,8 @@ default_supports = [
     ['appliance', 'microwave', True, 'microwave', 'hitman_tmp'],
     ['food', 'MeatTurkeyLeg', True, 'chicken-leg', 'shelf_top'],
     ['food', 'VeggieCabbage', True, 'cabbage', 'upper_shelf'],  ## ['shelf_bottom', 'indigo_drawer_top]
-    ['food', 'Salter', '3934', 'salt-shaker', 'sektion'],
-    ['food', 'Salter', '5861', 'pepper-shaker', 'sektion'],
+    ['condiment', 'Salter', '3934', 'salt-shaker', 'sektion'],
+    ['condiment', 'Salter', '5861', 'pepper-shaker', 'sektion'],
     # ['utensil', 'PotBody', True, 'pot', 'indigo_tmp'],
     ['utensil', 'KitchenFork', True, 'fork', 'upper_shelf'],  ## ['indigo_drawer_top]
     # ['utensil', 'KitchenKnife', True, 'knife', 'indigo_drawer_top'],
@@ -69,7 +79,7 @@ saved_poses = {
     # ('cabbage', 'upper_shelf'): ((1.006, 6.295, 0.461), (0.0, 0.0, 0.941, 0.338)),
     # ('cabbage', 'indigo_drawer_top'): ((1.12, 8.671, 0.726), (0.0, 0.0, 0.173, 0.985)),
     ('salt-shaker', 'sektion'): ((0.771, 7.071, 1.152), (0.0, 0.0, 1.0, 0)),
-    ('pepper-shaker', 'sektion'): ((0.764, 7.303, 1.16), (0.0, 0.0, 1.0, 0)),
+    ('pepper-shaker', 'sektion'): ((0.764, 7.303, 1.164), (0.0, 0.0, 1.0, 0)),
     ('fork', 'indigo_tmp'): ((0.767, 8.565, 0.842), (0.0, 0.0, 0.543415, 0.8395)),
 }
 
@@ -154,13 +164,20 @@ def load_full_kitchen(world, load_cabbage=True, **kwargs):
 def load_braiser_bottom(world):
     braiser = world.name_to_body('braiserbody')
     world.add_object(Surface(braiser, link_from_name(braiser, 'braiser_bottom')))
-    world.add_to_cat(world.name_to_body('braiserlid'), 'movable')
+
+    world.add_to_cat('braiserlid', 'movable')
+    world.add_to_cat('braiserbody', 'surface')
+    world.add_to_cat('braiserbody', 'region')
+    world.add_to_cat('braiserbody', 'space')
 
 
 def load_cooking_mechanism(world):
     load_braiser_bottom(world)
     stove_knob = world.add_joints_by_keyword('oven', 'knob_joint_1')[0]
     # dishwasher_door = world.add_joints_by_keyword('dishwasher', 'dishwasher_door')[0]
+
+    world.add_to_cat('salt-shaker', 'sprinkler')
+    world.add_to_cat('pepper-shaker', 'sprinkler')
 
 
 def get_objects_for_open_kitchen(world):
@@ -169,7 +186,7 @@ def get_objects_for_open_kitchen(world):
                     'indigo_drawer_top', 'indigo_drawer_top_joint', 'indigo_tmp',
                     'sektion', 'chewie_door_left_joint', 'chewie_door_right_joint',
                     'salt-shaker', 'pepper-shaker',
-                    'front_right_stove', 'knob_joint_1']
+                    'front_left_stove', 'knob_joint_1']  ## 'front_right_stove',
     objects = [world.name_to_body(name) for name in object_names]
     objects = sort_body_indices(objects)
     world.set_english_names(part_names)
@@ -181,7 +198,33 @@ def get_objects_for_open_kitchen(world):
     return objects
 
 
-def load_open_problem_kitchen(world, reduce_objects=False, open_doors_for=[]):
+def prevent_funny_placements(world, verbose=True):
+    """ need to be automated by LLMs """
+
+    movables = world.cat_to_bodies('movable')
+    food = world.cat_to_bodies('food')
+    condiments = world.cat_to_bodies('condiment')
+
+    ## only the lid can be placed on braiserbody or the front left stove
+    ## only food can be placed on braiser bottom, or inside braiserbody
+    braiserbody = world.name_to_body('braiserbody')
+    braiserlid = world.name_to_body('braiserlid')
+    stove = world.name_to_body('front_left_stove')
+    braiser_bottom = world.name_to_body('braiser_bottom')
+
+    for o in movables:
+        if o not in food + condiments:
+            world.add_not_stackable(o, braiser_bottom)
+            world.add_not_containable(o, braiserbody)
+        if o != braiserlid:
+            world.add_not_stackable(o, braiserbody)
+            world.add_not_stackable(o, stove)
+
+    if verbose:
+        world.summarize_forbidden_placements()
+
+
+def load_open_problem_kitchen(world, reduce_objects=False, difficulty=1, open_doors_for=[]):
     spaces = {
         'counter': {
             'sektion': [],
@@ -207,10 +250,21 @@ def load_open_problem_kitchen(world, reduce_objects=False, open_doors_for=[]):
     movables, movable_to_doors = load_nvidia_kitchen_movables(world, open_doors_for=open_doors_for,
                                                               custom_supports=custom_supports)
     load_cooking_mechanism(world)
+    prevent_funny_placements(world)
+
+    world.set_learned_pose_list_gen(learned_nvidia_pickled_pose_list_gen)
+    world.set_learned_bconf_list_gen(learned_nvidia_pickled_bconf_list_gen)
+    world.set_learned_position_list_gen(learned_nvidia_pickled_position_list_gen)
 
     objects = None
     if reduce_objects:
         objects = get_objects_for_open_kitchen(world)
+
+    if difficulty == 0:
+        for door in world.cat_to_bodies('door'):
+            world.open_joint(door, extent=0.8)
+        world.name_to_object('front_left_stove').place_obj(world.name_to_object('braiserlid'))
+
     return objects, movables, movable_to_doors
 
 
@@ -289,7 +343,7 @@ def place_in_nvidia_kitchen_space(obj, supporter_name, interactive=False, doors=
 
     ## check if the object is in collision with the surface
     collided(obj.body, [world.name_to_object(supporter_name).body],
-             world=world, verbose=True, tag='place_in_nvidia_kitchen_space')
+             world=world, verbose=True, tag='place_in_nvidia_kitchen_space', log_collisions=False)
 
 
 def load_nvidia_kitchen_movables(world: World, open_doors_for: list = [], custom_supports: dict = {}):
@@ -318,7 +372,8 @@ def load_nvidia_kitchen_movables(world: World, open_doors_for: list = [], custom
     movables = {}
     movable_to_doors = {}
     for category, asset_name, rand_ins, name, supporter_name in default_supports:
-        movable = world.add_object(Movable(
+        object_class = Movable if category not in ['appliance'] else Object
+        movable = world.add_object(object_class(
             load_asset(asset_name, x=0, y=0, yaw=random.uniform(-math.pi, math.pi), random_instance=rand_ins),
             category=category, name=name
         ))
@@ -490,3 +545,90 @@ def learned_nvidia_bconf_list_gen(world, inputs, verbose=True):
                     print('learned_nvidia_bconf_list_gen | found', len(to_return), 'base confs for', key)
                 break
     return to_return
+
+
+#####################################################################################################
+
+
+def load_database(world, name):
+    dual_arm = '' if not world.robot.dual_arm else 'dual_arm_'
+    pickled_path = join(DATABASES_PATH, f'nvidia_kitchen_{dual_arm}{name}.pickle')
+    return pickle.load(open(pickled_path, 'rb'))
+
+
+def learned_nvidia_pickled_position_list_gen(world, joint, p1, num_samples=30, verbose=True):
+    if world.learned_position_database is None:
+        world.learned_position_database = load_database(world, name='j_to_p')
+
+    results = None
+    key = (str(joint), p1.value)
+    if key in world.learned_position_database:
+        positions = world.learned_position_database[key]
+        results = random.sample(positions, min(num_samples, len(positions)))
+    else:
+        print(f'learned_nvidia_pickled_position_list_gen({key}) not found in database')
+    return results
+
+
+def learned_nvidia_pickled_pose_list_gen(world, body, surfaces, num_samples=30, obstacles=[], verbose=True):
+    if world.learned_pose_database is None:
+        world.learned_pose_database = load_database(world, name='or_to_p')
+    results = None
+    key = (str(body), str(surfaces[0]))
+    if key in world.learned_pose_database:
+        poses = world.learned_pose_database[key]
+        results = random.sample(poses, min(num_samples, len(poses)))
+        results = [(f[:3], quat_from_euler(f[3:])) for f in results]
+    else:
+        print(f'learned_nvidia_pickled_pose_list_gen({key}) not found in database')
+    return results
+
+
+def learned_nvidia_pickled_bconf_list_gen(world, inputs, num_samples=30, verbose=True):
+    from pybullet_tools.pr2_primitives import Pose
+
+    if world.learned_bconf_database is None:
+        database_names = ['ajg_to_p_to_q', 'aog_to_p_to_q']
+        world.learned_bconf_database = {
+            p: load_database(world, name=p) for p in database_names
+        }
+
+    robot = world.robot
+    joints = robot.get_group_joints('base-torso')
+    results = []
+
+    a, o, p, g = inputs[:4]
+    key = (a, str(o), nice(g.value))
+
+    if isinstance(p, Position):
+        database = world.learned_bconf_database['ajg_to_p_to_q']
+
+        if key in database:
+            p_to_q = database[key]
+            if p.value in p_to_q:
+                results = p_to_q[p.value]
+            else:
+                print(f'learned_nvidia_pickled_ajg_to_p_to_q({p.value}) not found in database')
+
+    if isinstance(p, Pose):
+        aog_to_p_to_q = world.learned_bconf_database['aog_to_p_to_q']
+        key = (a, str(o), nice(g.value))
+        if key in aog_to_p_to_q:
+            p_to_q = aog_to_p_to_q[key]
+            key2 = nice(p.value)
+            if key2 in p_to_q:
+                results = p_to_q[key2]
+            else:
+                keys = np.asarray(list(p_to_q.keys()))
+                diff = keys - np.asarray(key2)
+                min_index = np.argmin(np.sum(diff*diff, axis=1))
+                min_diff = diff[min_index]
+                if np.max(np.abs(min_diff)) < 0.1:
+                    key_found = list(p_to_q.keys())[min_index]
+                    results = p_to_q[key_found]
+                else:
+                    print(f'learned_nvidia_pickled_aog_to_p_to_q({key2}) not found in database')
+
+    results = random.sample(results, min(num_samples, len(results)))
+    results = [Conf(robot.body, joints, bq) for bq in results]
+    return results

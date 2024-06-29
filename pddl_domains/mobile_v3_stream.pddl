@@ -200,7 +200,6 @@
     )
     (:stream inverse-kinematics-ungrasp-handle
       :inputs (?a ?o ?p ?g ?q ?aq1)
-      ;:domain (and (Controllable ?a) (Position ?o ?p) (HandleGrasp ?o ?g) (BConf ?q) (AConf ?a ?aq1))
       :domain (and (UngraspHandle ?a ?o ?p ?g ?q ?aq1))
       :outputs (?aq2 ?t)
       :certified (and (AConf ?a ?aq2) (ATraj ?t)
@@ -233,74 +232,6 @@
       :certified (and (AConf ?a ?aq2) (ATraj ?at) (KinTurnKnob ?a ?o ?p1 ?p2 ?g ?q ?aq1 ?aq2 ?at))
     )
 
-    (:stream sample-marker-grasp
-      :inputs (?o)
-      :domain (and (Marker ?o)) ;; (Graspable ?o)
-      :outputs (?g)
-      :certified (MarkerGrasp ?o ?g)
-    )
-    (:stream sample-marker-pose
-      :inputs (?o ?p1)
-      :domain (and (Marker ?o) (Pose ?o ?p1))
-      :outputs (?p2)
-      :certified (Pose ?o ?p2)
-    )
-    (:stream inverse-kinematics-grasp-marker
-      :inputs (?a ?o ?p ?g)
-      :domain (and (Controllable ?a) (Pose ?o ?p) (MarkerGrasp ?o ?g))
-      :outputs (?q ?t)
-      :certified (and (BConf ?q) (ATraj ?t) (KinGraspMarker ?a ?o ?p ?g ?q ?t))
-    )
-    (:stream inverse-kinematics-ungrasp-marker
-      :inputs (?a ?o ?p ?g ?q)
-      :domain (and (Controllable ?a) (Pose ?o ?p) (MarkerGrasp ?o ?g) (BConf ?q))
-      :outputs (?t)
-      :certified (and (ATraj ?t) (KinUngraspMarker ?a ?o ?p ?g ?q ?t))
-    )
-    (:stream plan-base-pull-marker-random
-      :inputs (?a ?o ?p1 ?g ?q1 ?o2 ?p3)
-      :domain (and (Controllable ?a) (Marker ?o) (Pose ?o ?p1) (MarkerGrasp ?o ?g) (BConf ?q1) (Cart ?o2) (Pose ?o2 ?p3))
-      :outputs (?p2 ?q2 ?p4 ?t)
-      :certified (and (Pose ?o ?p2) (BConf ?q2) (Pose ?o2 ?p4) (BTraj ?t)
-                      (KinPullMarkerRandom ?a ?o ?p1 ?p2 ?g ?q1 ?q2 ?o2 ?p3 ?p4 ?t))
-    )
-    ;(:stream plan-base-pull-marker-to-pose
-    ;  :inputs (?a ?o ?p1 ?p2 ?g ?q1 ?o2 ?p3)
-    ;  :domain (and (Controllable ?a) (Marker ?o) (Pose ?o ?p1) (Pose ?o ?p2) (MarkerGrasp ?o ?g) (BConf ?q1) (Cart ?o2) (Pose ?o2 ?p3))
-    ;  :outputs (?q2 ?p4 ?t)
-    ;  :certified (and (BConf ?q2) (Pose ?o2 ?p4) (BTraj ?t) (KinPullMarkerToPose ?a ?o ?p1 ?p2 ?g ?q1 ?q2 ?o2 ?p3 ?p4 ?t))
-    ;)
-    ;(:stream plan-base-pull-marker-to-bconf
-    ;  :inputs (?a ?o ?p1 ?g ?q1 ?q2 ?o2 ?p3)
-    ;  :domain (and (Controllable ?a) (Marker ?o) (Pose ?o ?p1) (MarkerGrasp ?o ?g) (BConf ?q1) (BConf ?q2) (Cart ?o2) (Pose ?o2 ?p3))
-    ;  :outputs (?p2 ?p4 ?t)
-    ;  :certified (and (Pose ?o ?p2) (Pose ?o2 ?p4) (BTraj ?t) (KinPullMarkerToBConf ?a ?o ?p1 ?p2 ?g ?q1 ?q2 ?o2 ?p3 ?p4 ?t))
-    ;)
-
-  (:stream sample-bconf-in-region
-    :inputs (?r)
-    :domain (and (Environment ?r))
-    :outputs (?q)
-    :certified (and (BConf ?q) (BConfInRegion ?q ?r))
-  )
-  (:stream sample-pose-in-region
-    :inputs (?o ?r)
-    :domain (and (Movable ?o) (Environment ?r))
-    :outputs (?p)
-    :certified (and (Pose ?o ?p) (PoseInRegion ?o ?p ?r))
-  )
-
-  (:stream test-bconf-in-region
-    :inputs (?q ?r)
-    :domain (and (BConf ?q) (Environment ?r))
-    :certified (BConfInRegion ?q ?r)
-  )
-  (:stream test-pose-in-region
-    :inputs (?o ?p ?r)
-    :domain (and (Pose ?o ?p) (Environment ?r))
-    :certified (PoseInRegion ?o ?p ?r)
-  )
-
   ;(:function (MoveCost ?t)
   ;  (and (BTraj ?t))
   ;)
@@ -314,4 +245,83 @@
   ;(:predicate (TrajGraspCollision ?t ?a ?o ?g)
   ;  (and (BTraj ?t) (Arm ?a) (Grasp ?o ?g))
   ;)
+
+  ;;----------------------------------------------------------------------
+  ;;      extended streams from _cooking_stream.pddl
+  ;;----------------------------------------------------------------------
+
+  (:stream sample-pose-sprinkle
+    :inputs (?o1 ?p1 ?o2)
+    :domain (and (Region ?o1) (Pose ?o1 ?p1) (Graspable ?o2))
+    :outputs (?p2)
+    :certified (and (Pose ?o2 ?p2) (SprinklePose ?o1 ?p1 ?o2 ?p2))
+  )
+
+  (:stream test-cfree-pose-between
+    :inputs (?o1 ?p1 ?o2 ?p2 ?o3 ?p3)
+    :domain (and (Pose ?o1 ?p1) (Pose ?o2 ?p2) (Pose ?o3 ?p3))
+    :certified (CFreePoseBetween ?o1 ?p1 ?o2 ?p2 ?o3 ?p3)
+  )
+
+
+  ;;----------------------------------------------------------------------
+  ;;      extended streams from _nudge_v1b_stream.pddl
+  ;;----------------------------------------------------------------------
+
+  (:stream sample-nudge-grasp
+    :inputs (?o)
+    :domain (Door ?o)
+    :outputs (?g)
+    :certified (NudgeGrasp ?o ?g)
+  )
+
+  (:stream get-joint-position-nudged-open
+    :inputs (?o ?p1)
+    :domain (and (Door ?o) (Position ?o ?p1) (IsOpenedPosition ?o ?p1))
+    :outputs (?p2)
+    :certified (and (Position ?o ?p2) (IsNudgedPosition ?o ?p2)
+                    (IsSampledNudgedPosition ?o ?p1 ?p2))
+  )
+
+    (:stream inverse-kinematics-nudge-door
+      :inputs (?a ?o ?p ?g)
+      :domain (and (Controllable ?a) (IsOpenedPosition ?o ?p) (NudgeGrasp ?o ?g))
+      :outputs (?q ?aq ?t)
+      :certified (and (BConf ?q) (AConf ?a ?aq)
+                      (NudgeConf ?a ?o ?p ?g ?q ?aq)
+                      (KinNudgeGrasp ?a ?o ?p ?g ?q ?aq ?t))
+    )
+
+    (:stream plan-base-nudge-door
+      :inputs (?a ?o ?p1 ?p2 ?g ?q1 ?aq)
+      :domain (and (NudgeConf ?a ?o ?p1 ?g ?q1 ?aq) (IsSampledNudgedPosition ?o ?p1 ?p2))
+      ;:fluents (AtPosition)
+      :outputs (?q2 ?bt)
+      :certified (and (BConf ?q2) (KinNudgeDoor ?a ?o ?p1 ?p2 ?g ?q1 ?q2 ?aq))
+    )
+
+  ;(:stream sample-nudge-back-grasp
+  ;  :inputs (?o)
+  ;  :domain (Door ?o)
+  ;  :outputs (?g)
+  ;  :certified (NudgeBackGrasp ?o ?g)
+  ;)
+
+    ;(:stream inverse-kinematics-nudge-door-back
+    ;  :inputs (?a ?o ?p ?g)
+    ;  :domain (and (Controllable ?a) (IsNudgedPosition ?o ?p) (NudgeBackGrasp ?o ?g))
+    ;  :outputs (?q ?aq ?t)
+    ;  :certified (and (BConf ?q) (AConf ?a ?aq) (ATraj ?t)
+    ;                  (NudgeBackConf ?a ?o ?p ?g ?q ?aq)
+    ;                  (KinNudgeBackGrasp ?a ?o ?p ?g ?q ?aq ?t))
+    ;)
+
+    ;(:stream plan-base-nudge-door-back
+    ;  :inputs (?a ?o ?p1 ?p2 ?g ?q1 ?aq)
+    ;  :domain (and (NudgeBackConf ?a ?o ?p1 ?g ?q1 ?aq) (IsSampledNudgedPosition ?o ?p2 ?p1))
+    ;  :outputs (?q2 ?bt)
+    ;  :certified (and (BConf ?q2) (BTraj ?bt) (KinNudgeBackDoor ?a ?o ?p1 ?p2 ?g ?q1 ?q2 ?aq ?bt))
+    ;)
+
+
 )

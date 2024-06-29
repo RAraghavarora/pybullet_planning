@@ -227,8 +227,8 @@ class World(WorldBase):
         self.OBJECTS_BY_CATEGORY = defaultdict(list)
         self.REMOVED_BODY_TO_OBJECT = {}
         self.REMOVED_OBJECTS_BY_CATEGORY = defaultdict(list)
-        self.ATTACHMENTS = {}  ## {child_obj: create_attachment(parent_obj, link_name, child_obj)}
 
+        self.attachments = {}  ## {child_obj: create_attachment(parent_obj, link_name, child_obj)}
         self.sub_categories = {}
         self.sup_categories = {}
         self.SKIP_JOINTS = False
@@ -238,7 +238,8 @@ class World(WorldBase):
         self.articulated_parts = {k: [] for k in ['door', 'drawer', 'knob', 'button']}
         self.changed_joints = []
         self.non_planning_objects = []
-        self.not_stackable = {}
+        self.not_stackable = defaultdict(list)
+        self.not_containable = defaultdict(list)
         self.c_ignored_pairs = []
         self.planning_config = {'camera_zoomins': [], 'camera_poses': {}}
         self.inited_link_joint_relations = False
@@ -246,6 +247,10 @@ class World(WorldBase):
         ## for speeding up planning
         self.learned_bconf_list_gen = None
         self.learned_pose_list_gen = None
+        self.learned_position_list_gen = None
+        self.learned_bconf_database = None
+        self.learned_pose_database = None
+        self.learned_position_database = None
 
         ## for visualization
         self.path = None
@@ -267,13 +272,43 @@ class World(WorldBase):
                     if verbose:
                         print('world.removed redundant body', b)
 
-    def add_not_stackable(self, body, surface):
-        if body not in self.not_stackable:
-            self.not_stackable[body] = []
+    ## --------------------------------------------------------------------------------------
+
+    def add_not_containable(self, body, space, verbose=False):
+        self.not_containable[body].append(space)
+        if verbose:
+            print(f'world.do_not_contain({body}, {space})')
+
+    def check_not_containable(self, body, space):
+        return body in self.not_containable and space in self.not_containable[body]
+
+    def add_not_stackable(self, body, surface, verbose=False):
         self.not_stackable[body].append(surface)
+        if verbose:
+            print(f'world.do_not_stack({body}, {surface})')
 
     def check_not_stackable(self, body, surface):
         return body in self.not_stackable and surface in self.not_stackable[body]
+
+    def summarize_forbidden_placements(self):
+        for dic, name1, name2 in [
+            (self.not_stackable, 'world.not_stackable', 'cannot_supported'),
+            (self.not_containable, 'world.not_containable', 'connot_contain'),
+        ]:
+            dic_to_print = defaultdict(list)
+            dic_to_print_inv = defaultdict(list)
+            for k, v in dic.items():
+                key = self.get_name_from_body(k)
+                values = [self.get_name_from_body(vv) for vv in v]
+                dic_to_print[key] = values
+                for vv in values:
+                    dic_to_print_inv[vv].append(key)
+            print_dict(dic_to_print, name1)
+            print_dict(dic_to_print_inv, name2)
+            print()
+        print()
+
+    ## --------------------------------------------------------------------------------------
 
     def make_transparent(self, name, transparency=0.5):
         if isinstance(name, str):
@@ -427,6 +462,17 @@ class World(WorldBase):
             aabbs.append(get_aabb(body))
         return get_merged_aabb(aabbs)
 
+    def get_objects_by_type(self, objects=None):
+        if objects is None:
+            objects = list(self.BODY_TO_OBJECT)
+        extra_categories = ['food', 'utensil', 'condiment', 'appliance', 'region', 'button', 'knob']
+        result = self.summarize_all_types(return_full=True, categories=extra_categories)
+        summary = {}
+        for cat, bodies in result.items():
+            summary[f"<{cat}>"] = [self.get_english_name(body) for body in bodies if body in objects]
+        print_dict(summary, 'objects by category')
+        return pformat(summary, indent=3)
+
     ## ---------------------------------------------------------
 
     def add_box(self, object, pose=None):
@@ -495,6 +541,7 @@ class World(WorldBase):
             n = self.get_instance_name(body)
             part_name = get_link_name(body, obj.handle_link)
             n = PART_INSTANCE_NAME.format(body_instance_name=n, part_name=part_name)
+
             self.instance_names[(body, None, obj.handle_link)] = n
 
         ## object parts: surface, space
@@ -618,6 +665,10 @@ class World(WorldBase):
         self.add_object(surface)
         return surface
 
+    def remove_all_object_labels_in_pybullet(self):
+        for obj in self.get_all_objects():
+            obj.erase()
+
     def summarize_supporting_surfaces(self):
         from pybullet_tools.logging_utils import myprint as print
         return_dict = {}
@@ -645,15 +696,22 @@ class World(WorldBase):
         return return_dict
 
     def summarize_attachments(self):
-        return {k.body: (v.parent.body, v.parent_link, v.grasp_pose) for k, v in self.ATTACHMENTS.items()}
+        return {k.body: (v.parent.body, v.parent_link, v.grasp_pose) for k, v in self.attachments.items()}
 
-    def summarize_all_types(self):
-        printout = ''
-        for typ in ['movable', 'surface', 'door', 'drawer']:
-            num = len(self.cat_to_bodies(typ))
-            if num > 0:
-                printout += "{type}({num}), ".format(type=typ, num=num)
-        return printout
+    def summarize_all_types(self, return_full=False, categories=[]):
+        summary = {}
+        printout = []
+        for typ in ['movable', 'surface', 'space', 'joint', 'door', 'drawer']+categories:
+            bodies = self.cat_to_bodies(typ)
+            if return_full:
+                summary[typ] = bodies
+            else:
+                num = len(bodies)
+                if num > 0:
+                    printout.append(f"{typ}({num})")
+        if return_full:
+            return summary
+        return ', '.join(printout)
 
     def summarize_all_objects(self, print_fn=None):
         if print_fn is None:
@@ -695,9 +753,10 @@ class World(WorldBase):
         #     else:
         #         print(f'{body}  |  Name: {get_name(body)}, not in BODY_TO_OBJECT')
 
-        print_fn('----------------')
+        print_fn('-'*80)
         print_fn(f'PART I: world objects | {self.summarize_all_types()} | obstacles({len(self.fixed)}) = {self.fixed}')
-        print_fn('----------------')
+        print_fn('-'*80)
+
         bodies = [self.robot] + sort_body_parts(BODY_TO_OBJECT.keys())
         bodies += sort_body_parts(REMOVED_BODY_TO_OBJECT.keys(), bodies)
         static_bodies = [b for b in get_bodies() if b not in bodies]
@@ -723,7 +782,7 @@ class World(WorldBase):
             #         typ_str = f"{self.sup_categories[typ].capitalize()} -> {typ_str}"
             #         typ = self.sup_categories[typ]
 
-            line += f'{body}\t  |  {typ_str}: {object.name}'
+            line += f'{body}\t  |  {typ_str}: {object.name}\t  |  categories: {object.categories}'
 
             ## partnet mobility objects
             if hasattr(object, 'mobility_identifier'):
@@ -768,11 +827,17 @@ class World(WorldBase):
 
             print_fn(line)
 
-        print_dict(self.ATTACHMENTS, 'PART II: world attachments')
+        print_dict(self.attachments, '\nPART II: world attachments')
 
     def summarize_body_indices(self, print_fn=print):
         print_fn(SEPARATOR+f'Robot: {self.robot} | Objects: {self.objects}\n'
                  f'Movable: {self.movable} | Fixed: {self.fixed} | Floor: {self.floors}'+SEPARATOR)
+
+    def summarize_collisions(self):
+        log = self.robot.get_collisions_log()
+        pprint({self.body_to_name[str(k)]: v for k, v in log.items() if str(k) in self.body_to_name}, indent=3)
+        print()
+        return log
 
     def get_all_obj_in_body(self, body):
         if isinstance(body, tuple):
@@ -793,7 +858,7 @@ class World(WorldBase):
         bodies = [b for b in bodies if b in self.BODY_TO_OBJECT]
         return bodies
 
-    def remove_bodies_from_planning(self, goals=[], exceptions=[], skeleton=[], subgoals=[]):
+    def remove_bodies_from_planning(self, goals=[], exceptions=[], skeleton=[], subgoals=[], verbose=False):
 
         ## important for keeping related links and joints for planning
         self.init_link_joint_relations()
@@ -806,7 +871,6 @@ class World(WorldBase):
             'body_to_name': self.get_indices()
         })
 
-        print('\nremove_bodies_from_planning | exceptions =', exceptions)
         is_test_goal = False
         if isinstance(goals, tuple):
             goals = [goals]
@@ -824,6 +888,8 @@ class World(WorldBase):
                 items = literal[1]
                 if items in self.BODY_TO_OBJECT:
                     items = [items]
+                elif items is None:
+                    continue
             else:
                 items = literal[1:]
             for item in items:
@@ -864,9 +930,11 @@ class World(WorldBase):
             if str(body) not in bodies and str(body) not in exceptions:
                 self.remove_body_from_planning(body)
 
-        for cat, objs in self.REMOVED_OBJECTS_BY_CATEGORY.items():
-            print(f'\t{cat} ({len(objs)}) \t', [f"{obj.name}|{obj.pybullet_name}" for obj in objs])
-        print()
+        if verbose:
+            print('\nworld.remove_bodies_from_planning | exceptions =', exceptions)
+            for cat, objs in self.REMOVED_OBJECTS_BY_CATEGORY.items():
+                print(f'\t{cat} ({len(objs)}) \t', [f"{obj.name}|{obj.pybullet_name}" for obj in objs])
+            print()
 
     def remove_body_from_planning(self, body):
         if body is None: return
@@ -904,9 +972,9 @@ class World(WorldBase):
             obj = body
         else:
             obj = self.BODY_TO_OBJECT[body]
-        if obj in self.ATTACHMENTS:
-            print('world.remove_body_attachment\t', self.ATTACHMENTS[obj])
-            self.ATTACHMENTS.pop(obj)
+        if obj in self.attachments:
+            print('world.remove_body_attachment\t', self.attachments[obj])
+            self.attachments.pop(obj)
 
     def remove_object(self, object):
         object = self.get_object(object)
@@ -948,21 +1016,65 @@ class World(WorldBase):
         """ likely defined in world_builder/loaders_{DOMAIN}.py """
         self.learned_pose_list_gen = pose_list_gen
 
+    def set_learned_position_list_gen(self, list_gen_fn):
+        """ likely defined in world_builder/loaders_{DOMAIN}.py """
+        self.learned_position_list_gen = list_gen_fn
+
+    def reset_learned_samplers(self):
+        self.learned_bconf_list_gen = None
+        self.learned_pose_list_gen = None
+        self.learned_position_list_gen = None
+        self.learned_bconf_database = None
+        self.learned_pose_database = None
+        self.learned_position_database = None
+
+    def remove_unpickleble_attributes(self):
+        cached_attributes = {
+            'learned_pose_list_gen': self.learned_pose_list_gen,
+            'learned_bconf_list_gen': self.learned_bconf_list_gen,
+            'learned_position_list_gen': self.learned_position_list_gen
+        }
+        self.reset_learned_samplers()
+        self.robot.reset_ik_solvers()
+        return cached_attributes
+
+    def recover_unpickleble_attributes(self, cached_attributes):
+        self.learned_pose_list_gen = cached_attributes['learned_pose_list_gen']
+        self.learned_bconf_list_gen = cached_attributes['learned_bconf_list_gen']
+        self.learned_position_list_gen = cached_attributes['learned_position_list_gen']
+
     ##################################################################################
 
+    def get_all_body_objects(self, include_removed=False):
+        all_objects = list(self.ROBOT_TO_OBJECT.items()) + list(self.BODY_TO_OBJECT.items())
+        if include_removed:
+            all_objects += list(self.REMOVED_BODY_TO_OBJECT.items())
+        return all_objects
+
+    def get_all_bodies(self, include_removed=False):
+        all_objects = self.get_all_body_objects(include_removed=include_removed)
+        return [a[0] for a in all_objects]
+
+    def get_all_objects(self, include_removed=False):
+        all_objects = self.get_all_body_objects(include_removed=include_removed)
+        return [a[1] for a in all_objects]
+
+    def get_collision_objects(self):
+        saved = list(self.BODY_TO_OBJECT.keys())
+        return [n for n in get_bodies() if n in saved and n > 1]
+
+    ## ---------------------------------------------------------
+
     def get_name_from_body(self, body):
-        if body in self.BODY_TO_OBJECT:
-            return self.BODY_TO_OBJECT[body].name
-        elif body in self.ROBOT_TO_OBJECT:
-            return self.ROBOT_TO_OBJECT[body].name
+        obj = self.body_to_object(body)
+        if obj is not None:
+            return obj.name
         return None
 
     def name_to_body(self, name, include_removed=False):
         name = name.lower()
         possible = {}
-        all_objects = list(self.ROBOT_TO_OBJECT.items()) + list(self.BODY_TO_OBJECT.items())
-        if include_removed:
-            all_objects += list(self.REMOVED_BODY_TO_OBJECT.items())
+        all_objects = self.get_all_body_objects(include_removed)
         for body, obj in all_objects:
             if name == obj.name:
                 return body
@@ -972,16 +1084,22 @@ class World(WorldBase):
             return find_closest_match(possible)
         return None
 
-    def name_to_object(self, name, **kwargs):
-        body = self.name_to_body(name, **kwargs)
-        if body is None:
-            return None ## object doesn't exist
+    def body_to_object(self, body):
         if body in self.BODY_TO_OBJECT:
             return self.BODY_TO_OBJECT[body]
         if body in self.REMOVED_BODY_TO_OBJECT:
             return self.REMOVED_BODY_TO_OBJECT[body]
+        elif body in self.ROBOT_TO_OBJECT:
+            return self.ROBOT_TO_OBJECT[body]
+        print(f'world.body_to_object | body {body} not found')
+        return None  ## object doesn't exist
+
+    def name_to_object(self, name, **kwargs):
+        body = self.name_to_body(name, **kwargs)
+        return self.body_to_object(body)
 
     def cat_to_bodies(self, cat, get_all=False):
+
         bodies = []
         objects = []
         if cat in self.OBJECTS_BY_CATEGORY:
@@ -1001,6 +1119,7 @@ class World(WorldBase):
                 bodies.append((o.body, o.joint))
             else:
                 bodies.append(o.body)
+
         filtered_bodies = []
         for b in set(bodies):
             if b in self.BODY_TO_OBJECT or cat == 'floor':
@@ -1009,21 +1128,23 @@ class World(WorldBase):
                 filtered_bodies += [b]
             # else:
             #     print(f'   world.cat_to_bodies | category {cat} found {b}')
+
+        if cat == 'joint':
+            filtered_bodies += self.cat_to_bodies('door', get_all) + self.cat_to_bodies('drawer', get_all)
+            filtered_bodies = set(filtered_bodies)
         return sort_body_indices(filtered_bodies)
 
     def cat_to_objects(self, cat):
         bodies = self.cat_to_bodies(cat)
         return [self.BODY_TO_OBJECT[b] for b in bodies]
 
-    def get_collision_objects(self):
-        saved = list(self.BODY_TO_OBJECT.keys())
-        return [n for n in get_bodies() if n in saved and n > 1]
+    ## ---------------------------------------------------------
 
     def assign_attachment(self, body, tag=None):
         title = f'   world.assign_attachment({body}) | '
         if tag is not None:
             title += f'tag = {tag} | '
-        for child, attach in self.ATTACHMENTS.items():
+        for child, attach in self.attachments.items():
             if attach.parent.body == body:
                 pose = get_pose(child)
                 attach.assign()
@@ -1221,30 +1342,43 @@ class World(WorldBase):
     #                                   camera_point=camera_point, target_point=target_point)
     #     visualize_camera_image(image, index, img_dir=self.img_dir, **kwargs)
 
-    def init_link_joint_relations(self, all_links=None, all_joints=None, verbose=True):
+    def init_link_joint_relations(self, all_links=[], all_joints=None, verbose=False):
         """ find whether moving certain joints would change the link poses or spaces and surfaces """
         if self.inited_link_joint_relations:
             return
+        self._init_link_joint_relations(all_links, all_joints, verbose)
+        self.inited_link_joint_relations = True
+
+    def _init_link_joint_relations(self, all_links=[], all_joints=None, verbose=False):
+        ## another dictionary that needs only initiated once
+        body_to_name = self.get_indices()
+
         if all_joints is None:
             all_links, all_joints = self.get_typed_objects()[-2:]
-        all_link_poses = {(body, _, link): get_link_pose(body, link) for (body, _, link) in all_links}
+        # added_link_poses = {(body, _, link): get_link_pose(body, link) for (body, _, link) in all_links}
 
         lines = []
         for (body, joint) in all_joints:
             position = get_joint_position(body, joint)
+            all_link_poses = {(body, None, link): get_link_pose(body, link) for link in get_all_links(body)}
+
             toggle_joint(body, joint)
-            new_link_poses = {(body2, _, link): get_link_pose(body, link) for (body2, _, link) in all_links if body == body2}
+            joint_obj = self.BODY_TO_OBJECT[(body, joint)]
+            new_link_poses = {(body2, _, link): get_link_pose(body, link) for (body2, _, link) in all_link_poses}
             changed_links = [k for k, v in new_link_poses.items() if v != all_link_poses[k]]
             lines.append(f'\tjoint = {get_joint_name(body, joint)}|{(body, joint)}')
             for body_link in changed_links:
-                obj = self.BODY_TO_OBJECT[body_link]
-                obj.set_governing_joints([(body, joint)])
-                lines.append(f'\t\tlink = {get_link_name(body_link[0], body_link[-1])}|{body_link}')
+                if body_link in all_links:
+                    obj = self.BODY_TO_OBJECT[body_link]
+                    obj.set_governing_joints([(body, joint)])
+                    lines.append(f'\t\tlink = {get_link_name(body_link[0], body_link[-1])}|{body_link}')
+                joint_obj.all_affected_links.append(body_link[-1])
+            lines.append(f'\t\tall links affected = {changed_links}')
             set_joint_position(body, joint, position)
+
         if verbose and len(lines) > 0:
             print(f'\ninit_link_joint_relations ... started')
             [print(l) for l in lines]
-        self.inited_link_joint_relations = True
 
     def get_indices(self):
         """ for fastamp project """
@@ -1341,7 +1475,7 @@ class World(WorldBase):
             return pose
 
         def get_grasp(body, attachment):
-            grasp = pr2_grasp(body, attachment.grasp_pose)
+            grasp = pr2_grasp(body, attachment.grasp_pose)  ## TODO: wrong
             for fact in init_facts:
                 if fact[0] == 'grasp' and fact[1] == body and equal(fact[2].value, grasp.value):
                     return fact[2]
@@ -1351,7 +1485,8 @@ class World(WorldBase):
 
         ## ---- object joint positions ------------- TODO: may need to add to saver
         for body in all_joints:
-            if BODY_TO_OBJECT[body].handle_link is None:
+            obj = BODY_TO_OBJECT[body]
+            if obj.handle_link is None:
                 continue
             if ('Joint', body) in init or ('joint', body) in init:
                 continue
@@ -1361,10 +1496,12 @@ class World(WorldBase):
                      ('Position', body, position), ('AtPosition', body, position),
                      # ('IsOpenedPosition' if is_joint_open(body) else 'IsClosedPosition', body, position),
                      ]
-            init += add_joint_status_facts(body, position)
+            if 'door' in obj.get_categories():
+                init += [('Door', body)]
+            init += add_joint_status_facts(body, position, verbose=False)
 
             if body in knobs:
-                controlled = BODY_TO_OBJECT[body].controlled
+                controlled = obj.controlled
                 if controlled is not None:
                     init += [('ControlledBy', controlled, body)]
 
@@ -1389,6 +1526,7 @@ class World(WorldBase):
             init.extend([('StaticLink', body_link) for body_link in all_links])
         init.extend([('StaticLink', body) for body in surfaces if body not in all_links])
 
+        ## ---- for pouring & sprinkling ------------------
         regions = cat_to_bodies('region')
         for region in regions:
             pose = get_body_pose(region)
@@ -1400,16 +1538,15 @@ class World(WorldBase):
             pose = get_body_pose(body)
             supporter_obj = BODY_TO_OBJECT[body].supporting_surface
 
-            if body in self.ATTACHMENTS and not isinstance(self.ATTACHMENTS[body], ObjAttachment):
-                attachment = self.ATTACHMENTS[body]
+            if body in self.attachments and not isinstance(self.attachments[body], ObjAttachment):
+                attachment = self.attachments[body]
                 grasp = get_grasp(body, attachment)
                 arm = 'hand'
                 if get_link_name(robot, attachment.parent_link).startswith('r_'):
-                    arm = 'left'
+                    arm = 'right'
                 if get_link_name(robot, attachment.parent_link).startswith('l_'):
                     arm = 'left'
-                init.remove(('HandEmpty', arm))
-                init += [('Grasp', body, grasp), ('AtGrasp', arm, body, grasp)]
+                # init += [('Grasp', body, grasp), ('AtGrasp', arm, body, grasp)]
 
             elif use_rel_pose and supporter_obj is not None and hasattr(supporter_obj, 'governing_joints') \
                     and len(supporter_obj.governing_joints) > 0:
@@ -1425,7 +1562,7 @@ class World(WorldBase):
                     #     supporter_pose = supporter_poses[supporter]
                     # else:
                     #     supporter_pose = get_body_pose(supporter_obj.body)
-                    attachment = self.ATTACHMENTS[body]
+                    attachment = self.attachments[body]
                     rel_pose = pose_from_attachment(attachment)
                     # rel_pose_2 = multiply(invert(supporter_pose.value), pose.value)
 
@@ -1447,6 +1584,8 @@ class World(WorldBase):
 
             ## potential places to put in ## TODO: check size
             for space in spaces:
+                if self.check_not_containable(body, space):
+                    continue
                 init += [('Containable', body, space)]
                 if is_contained(body, space) or BODY_TO_OBJECT[space].is_contained(body):
                     # if is_contained(body, space) != BODY_TO_OBJECT[space].is_contained(body):
@@ -1482,7 +1621,7 @@ class World(WorldBase):
                 init.remove(fact)
         return init
 
-    def get_facts(self, conf_saver=None, init_facts=[], obj_poses=None, joint_positions=None, objects=None, verbose=True):
+    def get_facts(self, conf_saver=None, init_facts=[], obj_poses=None, joint_positions=None, objects=None, verbose=False):
 
         def cat_to_bodies(cat):
             ans = self.cat_to_bodies(cat)
@@ -1649,19 +1788,6 @@ class World(WorldBase):
         possible = sorted(possible, key=get_area, reverse=True)
         return possible
 
-    def remove_unpickleble_attributes(self):
-        self.cached_attributes = {
-            'learned_pose_list_gen': self.learned_pose_list_gen,
-            'learned_bconf_list_gen': self.learned_bconf_list_gen
-        }
-        self.learned_pose_list_gen = None
-        self.learned_bconf_list_gen = None
-        self.robot.reset_ik_solvers()
-
-    def recover_unpickleble_attributes(self):
-        self.learned_pose_list_gen = self.cached_attributes['learned_pose_list_gen']
-        self.learned_bconf_list_gen = self.cached_attributes['learned_bconf_list_gen']
-
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.robot)
 
@@ -1690,7 +1816,7 @@ class State(object):
             self.assumed_obj_poses = {}
 
         if len(attachments) == 0:
-            attachments = copy.deepcopy(world.ATTACHMENTS)
+            attachments = copy.deepcopy(world.attachments)
         self.attachments = attachments
         self.facts = list(facts) # TODO: make a set?
         self.variables = defaultdict(lambda: None)

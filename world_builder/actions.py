@@ -14,7 +14,7 @@ from pybullet_tools.utils import str_from_object, get_closest_points, INF, creat
     get_aabb, get_joint_position, get_joint_name, get_link_pose, link_from_name, PI, Pose, Euler, \
     get_extend_fn, get_joint_positions, set_joint_positions, get_max_limit, get_pose, set_pose, set_color, \
     remove_body, create_cylinder, set_all_static, wait_for_duration, remove_handles, set_renderer, \
-    LockRenderer, wait_unlocked, ConfSaver
+    LockRenderer, wait_unlocked, ConfSaver, set_joint_position
 from pybullet_tools.pr2_utils import PR2_TOOL_FRAMES, get_gripper_joints
 from pybullet_tools.pr2_primitives import Trajectory, Command, Conf, Trajectory, Commands
 from pybullet_tools.flying_gripper_utils import set_se3_conf, get_pull_handle_motion_gen
@@ -23,7 +23,20 @@ from robot_builder.robot_utils import close_until_collision
 
 from lisdf_tools.image_utils import RAINBOW_COLORS, save_seg_mask
 
-from .world import State
+from world_builder.world import State
+
+PULL_UNTIL = 1.8
+NUDGE_UNTIL = 2.3
+
+pull_actions = ['grasp_handle', 'pull_handle', 'ungrasp_handle']
+nudge_actions = ['nudge_door']
+pull_with_link_actions = ['grasp_handle', 'pull_handle_with_link', 'ungrasp_handle']
+pick_place_actions = ['pick', 'place']
+pick_arrange_actions = ['pick', 'arrange']
+pick_sprinkle_actions = ['pick', 'sprinkle']
+pick_place_rel_actions = ['pick_from_supporter', 'place_to_supporter']
+
+attach_joint_actions = ['pull_door_handle', 'pull_handle', 'pull_handle_with_link', 'nudge_door']
 
 
 class Action(object):  # TODO: command
@@ -141,6 +154,17 @@ class TeleportObjectAction(Action):
         set_pose(self.object, get_link_pose(state.robot, link))
         new_pose = get_pose(self.object)
         print(f"   [TeleportObjectAction] !!!! obj {self.object} is teleported from {nice(old_pose)} to {self.arm} gripper {nice(new_pose)}")
+        return state.new_state()
+
+
+class SetJointPositionAction(Action):
+    def __init__(self, body, position):
+        self.body = body
+        self.position = position.value
+
+    def transition(self, state):
+        body, joint = self.body
+        set_joint_position(body, joint, self.position)
         return state.new_state()
 
 
@@ -432,11 +456,16 @@ def adapt_attach_action(a, problem, plan, verbose=True):
     if ' ' in plan[0][0]:
         act = [aa for aa in plan if aa[0].startswith('pull') and aa[2] == body_to_name[body]][0]
     else:
-        print('adapt_attach_action', len(plan), [str(body), body_to_name[body]], '->', plan)
         pstn = get_joint_position(body[0], body[1])
-        act = [aa for aa in plan if aa[0] in ['pull_door_handle', 'pull_handle', 'pull_handle_with_link'] and \
+
+        act = [aa for aa in plan if aa[0] in attach_joint_actions and \
                aa[2] in [str(body), body_to_name[body]] and \
-               equal(continuous[aa[3].split('=')[0]][0], pstn)][0]
+               equal(continuous[aa[3].split('=')[0]][0], pstn)]
+        if len(act) == 0:
+            print(f'adapt_attach_action({str(body)}|{body_to_name[body]},pstn={pstn}) not found in len = {len(plan)}')
+            return
+
+        act = act[0]
 
     pstn1 = Position(body, get_value(act[3]))
     pstn2 = Position(body, get_value(act[4]))
@@ -446,7 +475,8 @@ def adapt_attach_action(a, problem, plan, verbose=True):
         funk = get_pull_handle_motion_gen(problem, collisions=False, verbose=verbose)
         aq1 = None
     else:
-        aq1 = get_value(act[9])  ## continuous[act[9].split('=')[0]]
+        var = act[8] if act[0] == 'nudge_door' else act[9]
+        aq1 = get_value(var)  ## continuous[act[9].split('=')[0]]
         aq1 = Conf(robot.body, robot.get_arm_joints(a.arm), aq1)
         funk = get_pull_door_handle_motion_gen(problem, collisions=False, verbose=verbose)
 
@@ -469,7 +499,7 @@ def adapt_action(a, problem, plan, verbose=True):
 
 def apply_actions(problem, actions, time_step=0.5, verbose=True, plan=None, body_map=None,
                   save_composed_jpg=False, save_gif=False, check_collisions=False,
-                  cfree_range=0.1, visualize_collisions=False):
+                  action_by_action=False, cfree_range=0.1, visualize_collisions=False):
     """ act out the whole plan and event in the world without observation/replanning """
     if actions is None:
         return
@@ -499,12 +529,38 @@ def apply_actions(problem, actions, time_step=0.5, verbose=True, plan=None, body
     initial_collisions = copy.deepcopy(ignored_collisions)
     expected_pose = None
     cfree_until = None
+    # executed_action = []
+    # last_trajectory = []
+    # current_trajectory = []
+    # skipped_last = False
     i = 0
     while i < len(actions):
         action = actions[i]
         name = action.__class__.__name__
-        if verbose:
-            print(f"{i}/{len(actions)}\t{action}")
+
+        # ## TODO: fix this bug in saving commands ------------------------------
+        # if name == 'GripperAction':
+        #     last_trajectory = [str(a) for a in current_trajectory]
+        #     current_trajectory = []
+        #
+        # if str(action) in executed_action and str(action) not in last_trajectory:
+        #     if not name.startswith('Move') and not skipped_last:
+        #         pass
+        #     else:
+        #         print('Skipping already executed action:', action)
+        #         skipped_last = True
+        #         continue
+        # else:
+        #     executed_action.append(str(action))
+        # skipped_last = False
+        # current_trajectory.append(action)
+        # ## ---------------------------------------------------------------------
+
+        line = f"{i}/{len(actions)}\t{action}"
+        if action_by_action and name == 'GripperAction':
+            wait_if_gui(f'Execute {line}?')
+        elif verbose:
+            print(line)
 
         if 'GripperAction' in name and check_collisions:
             next_action = actions[i+1]
@@ -813,25 +869,43 @@ def get_primitive_actions(action, world, teleport=False, verbose=True):
     ##    variates of place
     ## ------------------------------------
 
-    elif name in ['place', 'place_half', 'place_to_supporter']:
+    elif name in ['place', 'place_half', 'place_to_supporter', 'arrange']:
         if 'to_supporter' in name:
             a, o, rp, o2, p2, g = args[:6]
+        elif name == 'arrange':
+            a, o, r, p = args[:4]
+            o2 = p.support
         else:
-            a, o, p, g = args[:4]
+            a, o, p = args[:3]
             o2 = p.support
         t = get_traj(args[-1])
         open_gripper = GripperAction(a, extent=1, teleport=teleport)
         detach = DetachObjectAction(a, o, supporter=o2, verbose=verbose)
         new_commands = [detach, open_gripper] + t[::-1]
-        if name in ['place', 'place_to_supporter']:
+        if name != 'place_half':
             new_commands = t + new_commands
+
+    elif name == 'nudge_door':
+        a, o, p1, p2, g = args[:5]
+        at, bt = args[-2:]
+
+        at = get_traj(at)
+        close_gripper = GripperAction(a, extent=0, teleport=teleport)
+        attach = AttachObjectAction(a, g, o)
+        bt = get_traj(bt)
+        pstn = SetJointPositionAction(o, p2)  ## just in case attachment failed
+        detach = DetachObjectAction(a, o)
+        open_gripper = GripperAction(a, extent=1, teleport=teleport)
+
+        new_commands = at + [close_gripper, attach] + bt + [detach, open_gripper, pstn] + at[::-1]
 
     elif name == 'ungrasp_handle':
         a, o, p, g, q, aq1, aq2, t = args
         t = get_traj(t)
         detach = DetachObjectAction(a, o)
         open_gripper = GripperAction(a, extent=1, teleport=teleport)
-        new_commands = [detach, open_gripper] + t[::-1]
+        pstn = SetJointPositionAction(o, p)  ## just in case attachment failed
+        new_commands = [detach, open_gripper, pstn] + t[::-1]
 
     elif name == 'ungrasp_marker':
         a, o, o2, p, g, q, t = args

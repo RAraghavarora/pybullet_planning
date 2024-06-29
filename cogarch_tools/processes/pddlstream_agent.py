@@ -1,8 +1,9 @@
 from __future__ import print_function
 
 import copy
-import os
 import shutil
+import os
+from os import listdir
 from os.path import isdir, isfile, dirname, abspath, basename
 from pprint import pprint
 import time
@@ -19,6 +20,7 @@ from pybullet_tools.pr2_primitives import Trajectory
 from pybullet_tools.stream_agent import solve_pddlstream, make_init_lower_case
 from pybullet_tools.utils import SEPARATOR, wait_if_gui, WorldSaver
 from pybullet_tools.logging_utils import save_commands, TXT_FILE, summarize_state_changes, print_lists
+from pybullet_tools.logging_utils import myprint as print
 
 from world_builder.actions import get_primitive_actions
 from world_builder.world_utils import get_camera_image
@@ -89,6 +91,7 @@ class PDDLStreamAgent(MotionAgent):
         self.failed_count = None
         self.last_action_name = None
         self.actions = []
+        self.actions_for_env = []
         self.commands = []
         self.plan_len = 0
         self.pddlstream_kwargs = pddlstream_kwargs
@@ -112,7 +115,7 @@ class PDDLStreamAgent(MotionAgent):
     def set_world_state(self, state):
         self.world_state = state
 
-    def init_experiment(self, args, domain_modifier=None, object_reducer=None, comparing=False):
+    def init_experiment(self, args, domain_modifier=None, object_reducer=None, comparing=False, **kwargs):
         """ important for using the right files in replaning """
 
         ## related to saving data
@@ -150,7 +153,6 @@ class PDDLStreamAgent(MotionAgent):
         return exp_name
 
     def goal_achieved(self, observation):
-        from pybullet_tools.logging_utils import myprint as print
 
         ## hack for checking if the plan has been executed
         if self.plan is not None and len(self.plan) == 0:
@@ -184,7 +186,6 @@ class PDDLStreamAgent(MotionAgent):
             10 = {MoveBaseAction} MoveBaseAction{conf: q744=(1.474, 7.326, 0.808, 9.192)}
             11 = {Action: 2} Action(name='pick', args=('left', 4, p1=(0.75, 7.3, 1.24, 0.0, -0.0, 0.0), g104=(-0.0, 0.027, -0.137, 0.0, -0.0, -3.142), q728=(1.474, 7.326, 0.808, 2.909), c544=t(7, 129)))
         """
-        from pybullet_tools.logging_utils import myprint as print
 
         # if self.plan:
         #     self.world.remove_redundant_bodies()
@@ -212,9 +213,6 @@ class PDDLStreamAgent(MotionAgent):
                     print(f'pddlstream_agent.process_plan\tgetting new action {action}')
                 return action
 
-            # if self.step_count in [7,  8]:
-            #     print('self.step_count in [7,  8]')
-
             name, args = action
             incomplete_action = '?t' in args
 
@@ -224,6 +222,7 @@ class PDDLStreamAgent(MotionAgent):
             else:
                 if self.env_execution is not None and name in self.env_execution.domain.operators:
                     self._update_state(action)
+                    self.actions_for_env.append(action)
 
                 self.step_count += 1
                 commands = get_primitive_actions(action, self.world, teleport=SAVE_TIME)
@@ -265,8 +264,10 @@ class PDDLStreamAgent(MotionAgent):
                 shutil.move(failures_file, join(VISUALIZATIONS_PATH, f'log_0.json'))
         else:
             print(f'pddlstream.replan\tstep_count = {self.step_count}')
-            self.state_facts = make_init_lower_case(self.pddlstream_problem.init)
-            self.last_plan_state = copy.deepcopy(self.state_facts)
+
+            # summarize_facts(preimage, name='preimage')
+            self.state_facts = make_init_lower_case(self.pddlstream_problem.init)  ##  + preimage
+            self.last_plan_state = self.state_facts  ## copy.deepcopy(self.state_facts)
 
         ## the first planning problem - only for
         if self.env_execution is None:  ## and not self.pddlstream_kwargs['visualization']:
@@ -281,13 +282,19 @@ class PDDLStreamAgent(MotionAgent):
 
         return self.plan
 
-    def _init_env_execution(self):
+    def _init_env_execution(self, pddlstream_problem=None):
         from leap_tools.hierarchical import PDDLStreamForwardEnv
+
+        if self.env_execution is not None:
+            return
+
+        if pddlstream_problem is None:
+            pddlstream_problem = self.pddlstream_problem
 
         domain_pddl = self.domain_pddl
         domain_pddl = join(PDDL_PATH, 'domains', domain_pddl)
         init = self.state_facts
-        self.env_execution = PDDLStreamForwardEnv(domain_pddl, self.pddlstream_problem, init=init)
+        self.env_execution = PDDLStreamForwardEnv(domain_pddl, pddlstream_problem, init=init)
         self.env_execution.reset()
 
     def _replan_preprocess(self, observation):
@@ -301,27 +308,28 @@ class PDDLStreamAgent(MotionAgent):
     def record_time(self, time_log):
         self.time_log.append(time_log)
         print('-'*50)
-        print('\n[TIME LOG]\n' + '\n'.join([str(v) for v in self.time_log]))
+        print(f'\n[TIME LOG] ({len(self.time_log)})\n' + '\n'.join([str(v) for v in self.time_log]))
         print('-'*50, '\n')
 
     def remove_unpickleble_attributes(self):
-        self.world.remove_unpickleble_attributes()
+        return self.world.remove_unpickleble_attributes()
 
-    def recover_unpickleble_attributes(self):
-        self.world.recover_unpickleble_attributes()
+    def recover_unpickleble_attributes(self, cache):
+        self.world.recover_unpickleble_attributes(cache)
 
     def record_command(self, action):
         self.commands.append(action)
 
-    def save_commands(self, commands_path):
-        if len(self.commands) > 0:
-            self.remove_unpickleble_attributes()
-            save_commands(self.commands, commands_path)
-            self.recover_unpickleble_attributes()
+    def save_commands(self, commands_path, commands=None):
+        if commands is None:
+            commands = self.commands
+        if len(commands) > 0:
+            cache = self.remove_unpickleble_attributes()
+            save_commands(commands, commands_path)
+            self.recover_unpickleble_attributes(cache)
 
     def save_time_log(self, csv_name, solved=True, failed_time=False):
         """ compare the planning time and plan length across runs """
-        from pybullet_tools.logging_utils import myprint as print
         from tabulate import tabulate
 
         durations = {}
@@ -363,17 +371,16 @@ class PDDLStreamAgent(MotionAgent):
 
         return total_planning
 
-    def save_stats(self, solved=True, final=True, failed_time=False):
+    def move_log_to_run_dir(self):
+        if os.path.isfile(TXT_FILE):
+            shutil.move(TXT_FILE, join(self.exp_dir, f"log.txt"))
+
+    def save_stats(self, solved=True, final=True, failed_time=False, save_csv=True):
         print('\n\nsaving statistics\n\n')
         name = self.timestamped_name
 
         ## save one line in cvs of planning time and plan length
-        if final:
-
-            ## save the log txt, commands, and video recording
-            if os.path.isfile(TXT_FILE):
-                shutil.move(TXT_FILE, join(self.exp_dir, f"log.txt"))
-
+        if save_csv:
             csv_name = join(dirname(self.exp_dir), f'{self.exp_name}.csv')
             if self.comparing and ('original' not in self.exp_name):  ## put one directory up
                 csv_name = join(dirname(dirname(self.exp_dir)), f'{self.exp_name}.csv')
@@ -384,6 +391,7 @@ class PDDLStreamAgent(MotionAgent):
 
         if final:
             print('save_stats.total_planning.final')
+            self.move_log_to_run_dir()
             self.time_log.append({'total_planning': total_planning})
 
         ## save the final plan
@@ -400,62 +408,64 @@ class PDDLStreamAgent(MotionAgent):
         if not isdir(agent_state_dir):
             os.makedirs(agent_state_dir)
 
-        stream_map = self.env_execution._pddlstream_problem[3]
-        static_literals = self.env_execution.static_literals
-        env_externals = self.env_execution.externals
-        _action_space = self.env_execution._action_space
-        _observation_space = self.env_execution._observation_space
+        ## cache some values
+        if self.env_execution is not None:
+            static_literals = self.env_execution.static_literals
+            env_externals = self.env_execution.externals
+            _action_space = self.env_execution._action_space
+            _observation_space = self.env_execution._observation_space
+        stream_map = self.pddlstream_problem[3]
         variables = self.initial_state.variables
 
+        ## set those unpickleble elements to None
         self.sample_fn = None
         self.difference_fn = None
         self.distance_fn = None
         self.extend_fn = None
+
         self.observations = []
         self.world_state = None
         self.world.robot.reset_ik_solvers()
-
-        self.env_execution._pddlstream_problem = update_stream_map(self.env_execution._pddlstream_problem, None)
+        cache = self.world.remove_unpickleble_attributes()
+        if self.env_execution is not None:
+            self.env_execution._pddlstream_problem = update_stream_map(self.env_execution._pddlstream_problem, None)
+            self.env_execution.static_literals = None
+            self.env_execution.externals = None
+            self.env_execution._action_space = None
+            self.env_execution._observation_space = None
         self.pddlstream_problem = update_stream_map(self.pddlstream_problem, None)
-        self.env_execution.static_literals = None
-        self.env_execution.externals = None
-        self.env_execution._action_space = None
-        self.env_execution._observation_space = None
         self.initial_state.variables = None
 
         agent_state_path = join(agent_state_dir, f'agent_state_{self.problem_count}.pkl')
+        print(f'pddlstream_agent.save_agent_state at {agent_state_path}')
         with open(agent_state_path, 'bw') as f:
             pickle.dump(self, f)
-
         # for k, v in self.__dict__.items():
         #     print(k)
         #     with open(agent_state_path, 'bw') as f:
         #         pickle.dump(v, f)
-        #
-        # for k, v in self.env_execution.__dict__.items():
-        #     print(k)
-        #     with open(agent_state_path, 'bw') as f:
-        #         pickle.dump(v, f)
 
-        self.env_execution._pddlstream_problem = update_stream_map(self.env_execution._pddlstream_problem, stream_map)
+        ## reassign those unpickleble elements to None
+        self.world.recover_unpickleble_attributes(cache)
+        if self.env_execution is not None:
+            self.env_execution._pddlstream_problem = update_stream_map(self.env_execution._pddlstream_problem, stream_map)
+            self.env_execution.static_literals = static_literals
+            self.env_execution.externals = env_externals
+            self.env_execution._action_space = _action_space
+            self.env_execution._observation_space = _observation_space
         self.pddlstream_problem = update_stream_map(self.pddlstream_problem, stream_map)
-        self.env_execution.static_literals = static_literals
-        self.env_execution.externals = env_externals
-        self.env_execution._action_space = _action_space
-        self.env_execution._observation_space = _observation_space
         self.initial_state.variables = variables
 
     def load_agent_state(self, agent_state_path):
         """ resume planning """
-
         print('\n\n'+'-'*60+f'\n[load_agent_state] from {agent_state_path}\n')
 
         if self.env_execution is None:
             self._init_env_execution()
 
         exp_dir = self.exp_dir
-        agent_state_path = self.llamp_api.agent_state_path
         robot = self.world.robot
+        attachments = self.world.attachments
 
         stream_map = self.pddlstream_problem[3]
         static_literals = self.env_execution.static_literals
@@ -464,22 +474,31 @@ class PDDLStreamAgent(MotionAgent):
         _observation_space = self.env_execution._observation_space
         variables = self.initial_state.variables
 
+        cache = self.world.remove_unpickleble_attributes()
+
         with open(agent_state_path, 'br') as f:
             self = pickle.load(f)
 
+        self.world.robot = robot
+        self.world.attachments = attachments
+        self.world.recover_unpickleble_attributes(cache)
+
+        ## roll out world state to the last planning state
         commands_path = agent_state_path.replace('agent_state_', 'commands_')
-        # commands_path = agent_state_path.replace('agent_state_', 'commands_')
+        self.exp_dir = correct_home_path(self.exp_dir, exp_dir)
         self.apply_commands(commands_path)
 
         self.exp_dir = exp_dir
         self.plan = []
-        self.llamp_api.agent_state_path = agent_state_path
-        self.world.robot = robot
+        # self.goal_sequence.insert(0, 'reloaded')
 
         a, b, c, _, e, f = self.env_execution._pddlstream_problem
         self.env_execution._pddlstream_problem = PDDLProblem(a, b, c, stream_map, e, f)
-        a, b, c, _, e, f = self.pddlstream_problem
-        self.pddlstream_problem = PDDLProblem(a, b, c, stream_map, e, f)
+        a, b, c, _, init, f = self.pddlstream_problem
+        if self.facts_to_update_pddlstream_problem is not None:
+            added, deled = self.facts_to_update_pddlstream_problem
+            init = update_facts(init, added, deled)
+        self.pddlstream_problem = PDDLProblem(a, b, c, stream_map, init, f)
         self.env_execution.static_literals = static_literals
         self.env_execution.externals = env_externals
         self.env_execution._action_space = _action_space
@@ -496,8 +515,8 @@ class PDDLStreamAgent(MotionAgent):
             commands = pickle.load(f)
 
         problem, _, plan, body_map = load_basic_plan_commands(self.world, self.exp_dir, self.exp_dir, load_attach=False)
-        attachments = apply_actions(problem, commands, time_step=0.001, verbose=False, plan=plan)  ## , body_map=body_map
-        self.world.ATTACHMENTS = attachments
+        attachments = apply_actions(problem, commands, time_step=0.0001, verbose=False, plan=plan)  ## , body_map=body_map
+        self.world.attachments = attachments
 
 
 ###########################################################################
@@ -529,15 +548,46 @@ def print_action(action):
 
 
 def update_facts(facts, added, deled):
+    atgrasp = [f for f in added if f[0] == 'atgrasp']
+    if len(atgrasp) > 0:
+        add_grasp = [tuple(['grasp'] + list(f[2:])) for f in atgrasp]
+        add_grasp = [f for f in add_grasp if f not in facts + added]
+        if len(add_grasp) > 0:
+            print(f'\nupdate_facts\tsomehow mising {add_grasp}\n')
+            added += add_grasp
     return [f for f in set(facts + added) if f not in deled]
+
+
+def find_facts_by_pair(facts, at_something, something):
+    objs = [f[-1] for f in facts if f[0] == at_something]
+    return [f for f in facts if f[0] in [at_something, something] and f[-1] in objs]
 
 
 def filter_dynamic_facts(facts):
     ## the following predicates are generated again by state thus ignored
-    ignored_preds = ['aconf', 'ataconf', 'atbconf', 'atpose', 'atposition', 'atrelpose', 'basemotion',
-         'bconf', 'contained', 'defaultaconf', 'isclosedposition',
-         'kingrasphandle', 'kinpulldoorhandle', 'pose', 'position', 'relpose']
-    facts = [f for f in facts if f[0] not in ignored_preds]
+    ignored_preds = [
+        'aconf', 'ataconf', 'atbconf', 'atpose', 'atposition', 'atrelpose', 'basemotion',
+        'bconf', 'contained', 'defaultaconf', 'grasp', 'isclosedposition',
+        'kin', 'kingrasphandle', 'kinpulldoorhandle', 'pose', 'position', 'relpose',
+    ]
+
+    def keep_fact(f):
+        return not (f[0] in ignored_preds or f[0].startswith('kin') or f[0].startswith('unsafe') or
+                    (f[0] == 'not' and f[1][0].startswith('unsafe')))
+
+    ## these cannot be observed by state ## TODO: fix it
+    keep_preds = [
+        'supported', 'contained',  ## 'atgrasp',
+        'isnudgedposition', 'isopenposition', 'issamplednudgedposition',
+    ] ##
+
+    def keep_fact(f):
+        return f[0] in keep_preds
+
+    find_atgrasp = find_facts_by_pair(facts, 'atgrasp', 'grasp')
+    facts = [f for f in facts if keep_fact(f)]
+    print(f'filter_dynamic_facts\t found grasps {find_atgrasp}')
+    facts += find_atgrasp
 
     ## some positive and negative effects cancel out
     to_remove = []
@@ -547,3 +597,10 @@ def filter_dynamic_facts(facts):
             to_remove.extend([fact, fact[1]])
     facts = [f for f in facts if f not in to_remove]
     return facts
+
+
+def correct_home_path(loaded_exp_dir, correct_exp_dir):
+    key = '/vlm-tamp/'
+    home_loaded, exp_path = loaded_exp_dir.split(key)
+    home_corrected = correct_exp_dir.split(key)[0]
+    return join(home_corrected, key.replace('/', ''), exp_path)

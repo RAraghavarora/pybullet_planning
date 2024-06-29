@@ -21,7 +21,7 @@ from pybullet_tools.utils import unit_pose, get_aabb_extent, draw_aabb, RED, sam
     set_camera_pose, TAN, RGBA, get_color, get_min_limit, get_max_limit, set_color, WHITE, get_links, \
     get_link_name, get_link_pose, euler_from_quat, get_collision_data, get_joint_name, get_joint_position, \
     set_renderer, link_from_name, parent_joint_from_link, set_random_seed, set_numpy_seed
-from pybullet_tools.bullet_utils import is_joint_open, get_fine_rainbow_colors
+from pybullet_tools.bullet_utils import is_joint_open, get_fine_rainbow_colors, open_joint, toggle_joint
 from pybullet_tools.camera_utils import get_segmask
 from pybullet_tools.logging_utils import dump_json
 from pybullet_tools.general_streams import Position
@@ -894,7 +894,7 @@ def get_objs_in_camera_images(camera_images, world=None, show=False, save=False,
 
 
 def check_goal_achieved(facts, goal, world):
-    if goal[0] in ['on', 'in'] and len(goal) == 3:
+    if goal[0] in ['on', 'in', 'stacked'] and len(goal) == 3:
         body, supporter = goal[1], goal[2]
         atrelpose = [f[-1] for f in facts if f[0].lower() in ['atrelpose'] and f[1] == body and f[-1] == supporter]
         if len(atrelpose) > 0:
@@ -902,19 +902,25 @@ def check_goal_achieved(facts, goal, world):
 
         atpose = [f[-1] for f in facts if f[0].lower() in ['atpose'] and f[1] == body]
         found = [f for f in facts if f[0].lower() in ['supported', 'contained'] and \
-                 f[1] == body and f[2] == atpose and f[2] == supporter]
+                 f[1] == body and f[2] in atpose and f[3] == supporter]
         if len(found) > 0:
             return True
 
-    if goal[0] in ['openedjoint', 'closedjoint'] and len(goal) == 2:
+    if goal[0] in ['openedjoint', 'closedjoint', 'close', 'open'] and len(goal) == 2 and isinstance(goal[1], tuple):
         joint = goal[1]
         min_position = Position(joint, 'min').value
         atposition = [f[-1] for f in facts if f[0].lower() in ['atposition'] and f[1] == joint]
         if len(atposition):
-            if goal[0] == 'openedjoint' and atposition[0].value != min_position:
+            if goal[0] in ['openedjoint', 'open'] and atposition[0].value != min_position:
                 return True
-            if goal[0] == 'closedjoint' and atposition[0].value == min_position:
+            if goal[0] in ['closedjoint', 'close'] and atposition[0].value == min_position:
                 return True
+
+    if goal[0] in ['holding']:
+        found = [f for f in facts if f[0].startswith('at') and f[0].endswith('grasp') and f[2] == goal[-1]]
+        if len(found) > 0:
+            return True
+
     return False
 
 
@@ -941,25 +947,31 @@ def sort_body_indices(lst):
     return sorted_lst
 
 
-def add_joint_status_facts(body, position):
+def add_joint_status_facts(body, position=None, verbose=False, return_description=False):
     init = []
     title = f'get_world_fluents | joint {body} is'
 
     if is_joint_open(body, threshold=1, is_closed=True):
         init += [('IsClosedPosition', body, position)]
-        print(title, 'fully closed')
+        description = 'fully closed'
 
     elif not is_joint_open(body, threshold=0.25):
         init += [('IsClosedPosition', body, position)]
-        print(title, 'slightly open')
+        description = 'slightly open'
 
     elif is_joint_open(body, threshold=1):
         init += [('IsOpenedPosition', body, position)]
-        print(title, 'fully open')
+        description = 'fully open'
 
     else:
         init += [('IsOpenedPosition', body, position)]
-        print(title, 'partially open')
+        description = 'partially open'
+
+    if verbose:
+        print(title, description)
+
+    if return_description:
+        return description
 
     return init
 

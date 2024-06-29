@@ -87,7 +87,7 @@ class Position(object):
     def iterate(self):
         yield self
     def get_limits(self):
-        return get_joint_limits(self.body, self.joint)
+        return safely_get_joint_limits(self.body, self.joint)
     def is_prismatic(self):
         return get_joint_type(self.body, self.joint) == pybullet.JOINT_PRISMATIC
     def is_revolute(self):
@@ -98,6 +98,16 @@ class Position(object):
         return 'pstn{}={}'.format(index, nice(self.value))
 
 
+def safely_get_joint_limits(body, joint):
+    """ some partnet mobility joint has range [-pi/2, 0] where 0 is closed """
+    lower, upper = get_joint_limits(body, joint)
+    if upper == 0 and lower < 0:
+        i = upper
+        upper = lower
+        lower = i
+    return lower, upper
+
+
 class HandleGrasp(object):
     def __init__(self, grasp_type, body, value, approach, carry, index=None):
         self.grasp_type = grasp_type
@@ -105,7 +115,7 @@ class HandleGrasp(object):
         self.value = tuple(value) # gripper_from_object
         self.approach = tuple(approach)
         self.carry = tuple(carry)
-        if index == None: index = id(self)
+        if index is None: index = id(self)
         self.index = index
 
     def get_attachment(self, robot, arm, **kwargs):
@@ -390,16 +400,20 @@ def get_contain_gen(problem, collisions=True, num_samples=20, verbose=False, rel
                 for body_pose in result:
                     p = Pose(body, value=body_pose, support=space)
                     p.assign()
-                    coo = collided(body, obs, verbose=verbose,
-                                   tag='contain_gen_database', world=world)
-                    if not coo:
-                        attempts += 1
-                        if relpose:
-                            p = RelPose2(body, value=body_pose, support=space)
-                        yield (p,)
+                    # coo = collided(body, obs, verbose=verbose,
+                    #                tag='contain_gen_database', world=world)
+                    # if not coo:
+                    attempts += 1
+                    if relpose:
+                        p = RelPose2(body, value=body_pose, support=space)
+                    yield (p,)
 
-            if verbose: print(title, 'sample without learned_pose_list_gen')
+            if verbose:
+                print(title, 'sample without learned_pose_list_gen')
         ## ------------------------------------------------
+
+        if isinstance(space, int):
+            print('trying to sample pose inside body', space)
 
         while attempts < num_samples:
             attempts += 1
@@ -415,8 +429,15 @@ def get_contain_gen(problem, collisions=True, num_samples=20, verbose=False, rel
                 x, y, z, yaw = result
                 body_pose = ((x, y, z), quat_from_euler(Euler(yaw=yaw)))
             else:
-                print('\n\n trying to sample pose inside body', space)
-                body_pose = None
+                ## e.g. braiser body
+                result = sample_obj_in_body_link_space(body, body=space, link=None,
+                                                       PLACEMENT_ONLY=True, verbose=verbose, **kwargs)
+                if result is None:
+                    break
+                _, _, z, yaw = result
+                x, y, _ = get_aabb_center(get_aabb(space))
+                body_pose = ((x, y, z), quat_from_euler(Euler(yaw=yaw)))
+
             if body_pose is None:
                 break
 
@@ -468,7 +489,7 @@ def get_pose_in_space_test():
 """
 
 
-def get_above_pose_gen(problem, collisions=True, num_samples=5):
+def get_above_pose_gen(problem, collisions=True, num_samples=5, visualize=False):
     def gen(region, p2, body):
         if isinstance(region, int):  ## otherwise it's static link
             p2.assign()
@@ -483,7 +504,11 @@ def get_above_pose_gen(problem, collisions=True, num_samples=5):
             # yield (Pose(body, (point, quat)), )
             for _ in range(num_samples):
                 yaw = random.uniform(0, 2*math.pi)
-                yield (Pose(body, (point, quat_from_euler(Euler(yaw=yaw)))), )
+                p = Pose(body, (point, quat_from_euler(Euler(yaw=yaw, roll=PI))))
+                if visualize:
+                    set_renderer(True)
+                    p.assign()
+                yield (p, )
     return gen
 
 
@@ -526,10 +551,7 @@ def sample_joint_position_closed_gen():
     def fn(o, pstn1):
         upper = Position(o, 'max').value
         lower = Position(o, 'min').value
-        if upper > 0:
-            yield (Position(o, lower), )
-        if lower < 0:
-            yield (Position(o, upper), )
+        yield (Position(o, lower), )
     return fn
 
 
@@ -559,16 +581,28 @@ def visualize_sampled_pstns(x_min, x_max, x_points):
     plt.show()
 
 
-def sample_joint_position_gen(num_samples=14, to_close=False, visualize=False, verbose=True):
+def sample_joint_position_gen(problem, num_samples=14, p_max=PI, to_close=False, visualize=False, verbose=True):
     """ generate open positions if closed=False and closed positions if closed=True (deprecated) """
+    world = problem.world
+
     def fn(o, pstn1):
+
+        if world.learned_position_list_gen is not None:
+            pstns = world.learned_position_list_gen(world, o, pstn1, num_samples=num_samples)
+            if pstns is not None:
+                positions = [(Position(o, p),) for p in pstns]
+                for pstn in positions:
+                    yield pstn
+
+        is_drawer = pstn1.is_prismatic()
 
         upper = Position(o, 'max').value
         lower = Position(o, 'min').value
-        if lower > upper:
-            sometime = lower
-            lower = upper
-            upper = sometime
+        if upper > p_max:
+            upper = min([upper, p_max])
+        if lower < -p_max:
+            lower = max([lower, -p_max])
+
         x_min = lower
         x_max = upper
 
@@ -576,7 +610,7 @@ def sample_joint_position_gen(num_samples=14, to_close=False, visualize=False, v
         a_half = (upper - lower) / 2
         a_third = (upper - lower) / 3
 
-        if pstn1.is_prismatic():
+        if is_drawer:
             if to_close:
                 pstns.extend([np.random.uniform(lower, upper - a_half) for k in range(num_samples)])
             else:
@@ -598,30 +632,32 @@ def sample_joint_position_gen(num_samples=14, to_close=False, visualize=False, v
 
                 lower_new, upper_new = None, None
                 if lower < 0 and upper == 0:
-                    ## prevent from opening all the way is unreachable
-                    if upper - lower > 3/4 * math.pi:
-                        lower_new = upper - 3/4 * math.pi
+                    # ## prevent from opening all the way is unreachable
+                    # if upper - lower > 3/4 * math.pi:
+                    #     lower_new = upper - 3/4 * math.pi
+                    # pstns.append(upper - math.pi/2)
+
                     ## prevent from opening too little
                     if upper - lower > 1/2 * math.pi:
                         upper_new = upper - 1/2 * math.pi
                     else:
                         upper_new = lower + a_third
-                    pstns.append(upper - math.pi/2)
                 else:
-                    ## prevent from opening all the way is unreachable
-                    if upper - lower > 3/4 * math.pi:
-                        upper_new = lower + 3/4 * math.pi
+                    # ## prevent from opening all the way is unreachable
+                    # if upper - lower > 3/4 * math.pi:
+                    #     upper_new = lower + 3/4 * math.pi
+                    # pstns.append(lower + math.pi*2/3)
+
                     ## prevent from opening too little
                     if upper - lower > 1/2 * math.pi:
                         lower_new = lower + 1/2 * math.pi
                     else:
                         lower_new = upper - a_third
-                    pstns.append(lower + math.pi*2/3)
 
                 lower = lower_new if lower_new else lower
                 upper = upper_new if upper_new else upper
                 pstns.extend([np.random.uniform(lower, upper) for k in range(num_samples)])
-                pstns = [pstn for pstn in pstns if abs(pstn) > abs(pstn1.value)]
+                pstns = [pstn for pstn in pstns if abs(pstn) > abs(pstn1.value) + 0.3]
 
         pstns = [round(pstn, 3) for pstn in pstns]
 
@@ -629,8 +665,8 @@ def sample_joint_position_gen(num_samples=14, to_close=False, visualize=False, v
             visualize_sampled_pstns(x_min, x_max, pstns)
 
         if verbose:
-            print(f'\tsample_joint_position_gen({o}, {pstn1.value}, closed={to_close}) choosing from {pstns}, '
-                  f'joint limits = [{round(x_min, 3)}, {round(x_max, 3)}]')
+            print(f'\tsample_joint_position_gen({o}, {pstn1.value}, closed={to_close}, p_max={p_max}) '
+                  f'choosing from {pstns}, joint limits = [{round(x_min, 3)}, {round(x_max, 3)}]')
         random.shuffle(pstns)
         positions = [(Position(o, p), ) for p in pstns]
 
@@ -826,16 +862,15 @@ def get_handle_grasp_gen(problem, collisions=False, max_samples=2,
         handle_link = get_handle_link(body_joint, is_knob=is_knob)
         # print(f'{title} handle_link of body_joint {body_joint} is {handle_link}')
 
-        g_type = 'top'
-        arm = 'hand'
-        if robot.name.startswith('pr2'):
-            arm = 'left'
-
         grasps = get_hand_grasps(world, body, link=handle_link, handle_filter=True,
                                  visualize=visualize, retain_all=retain_all, length_variants=True, verbose=verbose)
 
         if verbose: print(f'\n{title} grasps =', [nice(g) for g in grasps])
 
+        g_type = 'top'
+        arm = 'hand'
+        if robot.name.startswith('pr2'):
+            arm = 'left'
         app = robot.get_approach_vector(arm, g_type, scale=0.5)
         grasps = [HandleGrasp('side', body_joint, g, robot.get_approach_pose(app, g),
                               robot.get_carry_conf(arm, g_type, g)) for g in grasps]
@@ -900,6 +935,65 @@ def get_reachable_test(radius=1.3, verbose=False):
 
 """ ==============================================================
 
+            Nudge Grasp for Doors
+
+    ==============================================================
+"""
+
+
+def get_nudge_grasp_list_gen(problem, collisions=True, num_samples=10, **kwargs):
+    funk = get_nudge_grasp_gen(problem, collisions=collisions, max_samples=num_samples, **kwargs)
+
+    def gen(body):
+        g = funk(body)
+        grasps = []
+        while len(grasps) < num_samples:
+            try:
+                grasp = next(g)
+                grasps.append(grasp)
+            except StopIteration:
+                break
+        return grasps
+    return gen
+
+
+def get_nudge_grasp_gen(problem, collisions=True, nudge_back=False, max_samples=2,
+                        randomize=False, visualize=False, retain_all=False, verbose=False):
+    obstacles = problem.fixed if collisions else []
+    world = problem.world
+    robot = problem.robot
+    title = f'general_streams.get_nudge_grasp_gen(nudge_back={nudge_back}, max_samples={max_samples}) |'
+
+    def fn(body_joint):
+        body, joint = body_joint
+        handle_link = get_handle_link(body_joint)
+
+        grasps = get_hand_grasps(world, body, link=handle_link, nudge=True, nudge_back=nudge_back,
+                                 visualize=visualize, retain_all=retain_all, verbose=verbose)
+
+        if verbose: print(f'\n{title} grasps =', [nice(g) for g in grasps])
+
+        g_type = 'top'
+        arm = 'hand'
+        if robot.name.startswith('pr2'):
+            arm = 'left'
+        app = robot.get_approach_vector(arm, g_type, scale=0.5)
+        grasps = [HandleGrasp('side', body_joint, g, robot.get_approach_pose(app, g),
+                              robot.get_carry_conf(arm, g_type, g)) for g in grasps]
+
+        if randomize:
+            random.shuffle(grasps)
+        if max_samples is not None and len(grasps) > max_samples:
+            random.shuffle(grasps)
+            grasps = grasps[:max_samples]
+        # return [(g,) for g in grasps]
+        for g in grasps:
+           yield (g,)
+    return fn
+
+
+""" ==============================================================
+
             Checking collisions
 
     ==============================================================
@@ -951,12 +1045,11 @@ def get_cfree_approach_pose_test(problem, collisions=True):
             return True
         p2.assign()
         bb2 = b2[0] if isinstance(b2, tuple) else b2
-        result = False
+        result = True
         for _ in problem.robot.iterate_approach_path(arm, gripper, p1.value, g1, body=b1):
             if pairwise_collision(b1, bb2) or pairwise_collision(gripper, bb2):
                 result = False
                 break
-            result = True
         return result
     return test
 
@@ -1046,22 +1139,26 @@ def get_cfree_traj_pose_test(problem, collisions=True, verbose=False, visualize=
     return test
 
 
-def get_cfree_pose_between_test(robot, collisions=True, visualize=True):
+def get_cfree_pose_between_test(robot, collisions=True, visualize=False):
     def test(b1, p1, b2, p2, b3, p3, fluents=[]):
         if not collisions or (b1 == b3) or (b2 == b3) or b2 in ['@world']:
             return True
         if fluents:
             process_motion_fluents(fluents, robot)
         p3.assign()
-        (x, y, z_upper), quat = p1.value
-        z_lower = p2.value[0][-1]
-        for z in np.linspace(z_lower, z_upper, num=5, endpoint=True)[1:-1]:
-            set_pose(b1, ((x, y, z), quat))
-            if pairwise_collision(b1, b3):
-                if visualize:
-                    set_renderer(True)
-                return False
-        return True
+        with PoseSaver(b1):
+            (x, y, z_upper), quat = p1.value
+            z_lower = p2.value[0][-1]
+            if isinstance(b3, tuple):
+                b3 = b3[0]
+            for z in np.linspace(z_lower, z_upper, num=5, endpoint=True)[1:-1]:
+                set_pose(b1, ((x, y, z), quat))
+                if pairwise_collision(b1, b3):
+                    robot.log_collisions(b3, source='cfree_pose_between_test')
+                    if visualize:
+                        set_renderer(True)
+                    return False
+            return True
     return test
 
 
@@ -1073,7 +1170,7 @@ def get_cfree_pose_between_test(robot, collisions=True, visualize=True):
 """
 
 
-def process_motion_fluents(fluents, robot, verbose=True):
+def process_motion_fluents(fluents, robot, verbose=False):
 
     ## sort the fluents so that AtRelPose is assigned after AtPose
     sorted_fluents = [f for f in fluents if f[0].lower() == 'atpose']

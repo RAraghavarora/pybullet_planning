@@ -5,10 +5,15 @@ ACTION_NAMES = {
     "move_base_wconf": "move the robot",
     "pick": "pick the object",
     "place": "place the object",
+    "arrange": "place the object on somewhere",
     "grasp_handle": "grasp the handle of door joint",
+    "pull_handle": "pull the handle of door joint",
+    "pull_handle_with_link": "pull the handle of door joint",
     "pull_door_handle": "pull the handle of door joint",
     "ungrasp_handle": "release the grasp of the handle of door joint",
-    "declare_store_in_space": "declare that all objects of this type have been stored into that space"
+    "declare_store_in_space": "declare that all objects of this type have been stored into that space",
+    "nudge_door": "push the door open more",
+    "sprinkle": "sprinkle some condiments into a region",
 }
 
 ACTION_ABV = {
@@ -16,10 +21,15 @@ ACTION_ABV = {
     "move_base_wconf": "",
     "pick": "k",
     "place": "c",
+    "arrange": "c",
     "grasp_handle": "",
+    "pull_handle": "l",
+    "pull_handle_with_link": "l",
     "pull_door_handle": "l",
     "ungrasp_handle": "",
-    "declare_store_in_space": ""
+    "declare_store_in_space": "",
+    "nudge_door": "n",
+    "sprinkle": "s",
 }
 
 TRANSLATIONS = {

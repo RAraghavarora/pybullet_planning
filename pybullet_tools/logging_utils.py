@@ -1,6 +1,7 @@
 import json
+import zipfile
 import os
-from os.path import join, isfile, isdir, abspath, dirname
+from os.path import join, isfile, isdir, abspath, dirname, relpath
 from os import mkdir
 from datetime import datetime
 import csv
@@ -218,9 +219,17 @@ def print_goal(goal, world=None, print_fn=None):
         print_fn = myprint
 
     print_fn(f'Goal ({len(goal) - 1}): ({goal[0]}')
-    for each in get_readable_list(goal[1:], world):
+    goals_to_print = [get_readable_list(g, world) for g in goal[1:]]
+    for each in goals_to_print:
         print_fn(f'   {tuple(each)},')
     print_fn(')')
+
+
+def print_domain(domain_pddl, stream_pddl, custom_limits):
+    myprint(f'stream_agent.pddlstream_from_state_goal(\n'
+            f'\tdomain = {domain_pddl}, \n'
+            f'\tstream = {stream_pddl}, \n'
+            f'\tcustom_limits = {custom_limits}')
 
 
 def summarize_poses(preimage):
@@ -258,15 +267,16 @@ def print_lists(tuples):
 
 
 def print_list(lst, title):
+    lst = sorted(lst, key=lambda x: x[0])
     print(f'\t{title}({len(lst)})')
     print('\t\t' + '\n\t\t'.join([str(f) for f in lst]))
 
 
-def print_dict(dic, title):
+def print_dict(dic, title, indent=3, width=80):
     from pprint import pformat
     title = title.replace('_', ' ').upper()
     myprint('-' * 25 + f' {title} ' + '-' * 25)
-    myprint(pformat(dic, indent=3))
+    myprint(pformat(dict(dic), indent=indent, width=width))
     myprint('-' * 60)
 
 
@@ -285,3 +295,20 @@ def process_facts(facts):
             not (f[0] == 'not' and f[1][0] in ['=', 'identical'])]
     facts = sorted(facts, key=lambda x: x[0])
     return facts
+
+
+## -------------------------------------------------------------------------
+
+
+def zipdir(path, ziph):
+    # ziph is zipfile handle
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            ziph.write(join(root, file), relpath(join(root, file), join(path, '..')))
+
+
+def zipit(dir_list, zip_name):
+    zipf = zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED)
+    for dir in dir_list:
+        zipdir(dir, zipf)
+    zipf.close()

@@ -592,7 +592,9 @@ class PDDLStreamEnv(PDDLEnv):
             if not isinstance(pred.body, Exists):  ## don't ground things in exist
                 params = [TypedEntity(pred.param_names[i], pred.var_types[i]) for i in range(len(pred.param_names))]
                 mapping = {params[i]: cond.variables[i] for i in range(len(params))}
-                for lit in pred.body.body.literals:
+
+                literals = pred.body.literals if isinstance(pred.body, LiteralDisjunction) else pred.body.body.literals
+                for lit in literals:
                     n = lit.predicate.name
                     args = []
                     for v in lit.variables:
@@ -1194,8 +1196,6 @@ class PDDLStreamForwardEnv(PDDLStreamEnv):
 
     def step(self, action):
         action = self.to_literal(action)
-        # if 'place' in str(action):
-        #     print('place in action')
         obs, reward, done, debug_info = super().step(action)
         facts = [self.from_literal(l) for l in obs.literals]
 

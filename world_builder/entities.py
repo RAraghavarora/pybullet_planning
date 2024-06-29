@@ -134,6 +134,13 @@ class Object(Index):
         self.categories = [category] ## for added categories like movable
         self.grasps = grasps
 
+    def get_categories(self):
+        categories = self.categories
+        class_cat = self.__class__.__name__.lower()
+        if class_cat not in self.categories:
+            categories = [class_cat] + categories
+        return categories
+
     def add_grasps(self, grasps):
         self.grasps = grasps
 
@@ -160,7 +167,7 @@ class Object(Index):
 
     def attach_obj(self, obj):
         link = self.link if self.link is not None else -1
-        self.world.ATTACHMENTS[obj] = create_attachment(self, link, obj, OBJ=True)
+        self.world.attachments[obj] = create_attachment(self, link, obj, OBJ=True)
         obj.change_supporting_surface(self)
 
     def place_new_obj(self, obj_name, category=None, name=None, max_trial=8, **kwargs):
@@ -254,7 +261,7 @@ class Object(Index):
     def __int__(self):
         if not hasattr(self, 'body'):
             print(self, 'doesnt have attribute body thus cant be deepcopied')
-        if self.body is None:
+        if not hasattr(self, 'body') or self.body is None:
             return id(self)  # TODO: hack
         if self.joint is not None:
             return (self.body, self.joint)
@@ -263,8 +270,9 @@ class Object(Index):
         return self.body
 
     def __repr__(self):
-        #return repr(int(self))
-        return self.name
+        if hasattr(self, 'name'):
+            return self.name
+        return 'object.name'
 
     def _type(self):
         return self.__class__.__name__
@@ -626,9 +634,12 @@ class ArticulatedObjectPart(Object):
             max_limit = get_max_limit(body, joint)
         self.min_limit = min_limit
         self.max_limit = max_limit
+
         self.handle_link = self.find_handle_link(body, joint)
         self.handle_horizontal, self.handle_width = self.get_handle_orientation(body)
-        self.affected_links = []
+
+        self.affected_links = []  ## that are planning objects
+        self.all_affected_links = []  ## all links in the asset
 
     def find_handle_link(self, body, joint):
         link = get_joint_info(body, joint).linkName.decode("utf-8")

@@ -72,8 +72,8 @@ class Attachment(object):
                     conf = self.parent.get_all_arm_conf()
                     if conf in LP2JP[self.child][self.child_joint]:
                         ls = LP2JP[self.child][self.child_joint][conf]
-                        for group in self.parent.joint_groups: ## ['base', 'left', 'hand']:
-                            key = self.parent.get_positions(joint_group=group, roundto=3)
+                        for group in [g for g in ['base-torso', 'base', 'hand'] if g in self.parent.joint_groups]:
+                            key = self.parent.get_positions(joint_group=group, roundto=4)
                             result = in_list(key, ls)
                             if result is not None:
                                 position = ls[result]
@@ -136,8 +136,8 @@ def add_attachment_in_world(state=None, obj=None, parent=-1, parent_link=None, a
                 else:
                     obj.change_supporting_surface(parent)
     # for k in new_attachments:
-    #     if k in state.world.ATTACHMENTS:
-    #         state.world.ATTACHMENTS.pop(k)
+    #     if k in state.world.attachments:
+    #         state.world.attachments.pop(k)
 
     return new_attachments
 
@@ -171,7 +171,7 @@ def add_attachment(state=None, obj=None, parent=-1, parent_link=None, attach_dis
             attachment = create_attachment(parent, parent_link, obj, OBJ=OBJ)
         new_attachments[obj] = attachment  ## may overwrite older attachment
         if verbose:
-            print(f'\nbullet_utils.add_attachment | {attachment}\n')
+            print(f'pose_utils.add_attachment | {attachment}')
         if debug:
             attachment.assign()
     return new_attachments
@@ -192,7 +192,7 @@ def remove_attachment(state, obj=None, verbose=False):
     new_attachments = dict(state.attachments)
     if obj in new_attachments:
         if verbose:
-            print(f'\nbullet_utils.remove_attachment | {new_attachments[obj]}\n')
+            print(f'pose_utils.remove_attachment | {new_attachments[obj]}')
         new_attachments.pop(obj)
     return new_attachments
 
@@ -479,12 +479,14 @@ def sample_obj_in_body_link_space(obj, body, link=None, PLACEMENT_ONLY=False,
         print(f'sample_obj_in_body_link_space(obj={obj}, body={body}, link={link})')
         # wait_for_user()
 
-    aabb = get_aabb(body, link)
+    aabb = get_aabb(body, link) if link is not None else get_aabb(body)
     # draw_aabb(aabb)
 
     x, y, z, yaw = sample_pose(obj, aabb, obj_aabb=get_aabb(obj))
     maybe = obj
     handles = draw_fitted_box(maybe)[-1] if draw else []
+    if visualize:
+        draw_points(body, link)
 
     def sample_one(maybe, handles):
         x, y, z, yaw = sample_pose(obj, aabb, get_aabb(maybe))
@@ -755,6 +757,11 @@ def adjust_sampled_pose(world, body, surface, body_pose):
         dy = y - cy
         x, y, _ = get_aabb_center(get_aabb(surface[0], link=surface[-1]))
         body_pose = (x+dx, y+dy, z+0.01), quat
+
+    if 'braiserlid' in world.get_name(body) and 'braiserbody' in world.get_name(surface):
+        from world_builder.loaders_partnet_kitchen import get_lid_pose_on_braiser
+        body_pose = get_lid_pose_on_braiser(surface)
+
     # if 'bottle' in world.get_name(body):
     #     yaw = 0
     #     quat = quat_from_euler(Euler(yaw=yaw))

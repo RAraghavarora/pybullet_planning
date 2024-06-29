@@ -3,16 +3,18 @@ import time
 import copy
 import random
 from os.path import basename, abspath, join
+from collections import defaultdict
+import pprint
 
 from pybullet_tools.utils import get_joint_positions, clone_body, set_all_color, TRANSPARENT, \
-    link_from_name, multiply, invert, LockRenderer, unit_point, draw_aabb, get_aabb, \
+    link_from_name, multiply, invert, LockRenderer, unit_point, draw_aabb, get_aabb, get_link_name, \
     set_joint_positions, set_pose, GREEN, get_pose, remove_body, PoseSaver, get_relative_pose, \
     ConfSaver, get_unit_vector, unit_quat, get_link_pose, unit_pose, draw_pose, remove_handles, \
     interpolate_poses, Pose, Euler, quat_from_euler, get_bodies, get_all_links, PI, RED, \
     is_darwin, wait_for_user, YELLOW, euler_from_quat, wait_unlocked, set_renderer, \
     sub_inverse_kinematics, Point, get_collision_fn
 
-from pybullet_tools.bullet_utils import equal, nice, is_tuple, \
+from pybullet_tools.bullet_utils import equal, nice, is_tuple, get_links_collided, \
     collided, query_yes_no, has_tracik, is_mesh_entity, get_rotation_matrix
 from pybullet_tools.camera_utils import set_camera_target_body
 from pybullet_tools.pose_utils import Attachment
@@ -22,7 +24,7 @@ from pybullet_tools.pr2_utils import PR2_TOOL_FRAMES, PR2_GROUPS, TOP_HOLDING_LE
 from pybullet_tools.general_streams import get_handle_link, get_grasp_list_gen, get_contain_list_gen, \
     get_cfree_approach_pose_test, get_stable_list_gen, play_trajectory
 from pybullet_tools.stream_agent import remove_stream_by_name, remove_predicate_by_name, \
-    remove_all_streams_except_name
+    remove_all_streams_except_name, remove_operator_by_name
 
 from world_builder.entities import Robot
 from world_builder.world_utils import load_asset
@@ -55,6 +57,11 @@ class RobotAPI(Robot):
         self.collision_animations = []
         self.ik_solvers = {arm: None for arm in self.arms}
         self.debug_handles = []
+
+        self.collided_body_link = defaultdict(int)
+
+    def reset_log_collisions(self):
+        self.collided_body_link = defaultdict(int)
 
     def get_init(self, init_facts=[], conf_saver=None):
         raise NotImplementedError('should implement this for RobotAPI!')
@@ -345,6 +352,53 @@ class RobotAPI(Robot):
         return get_collision_fn(self, self.get_base_joints(), obstacles=obstacles, attachments=[],
                                 self_collisions=self.self_collisions, custom_limits=self.custom_limits, use_aabb=True)
 
+    def log_collisions(self, body, link=None, source='', robot_body=None, verbose=False):
+        world = self.world
+
+        obj = world.body_to_object(body)
+        name = world.get_debug_name(obj)
+        is_planning_object = body in world.BODY_TO_OBJECT
+        categories = obj.get_categories()
+
+        if verbose:
+            print(f'\n[log_collisions]\t{name}\tcategories={categories}\t<--\t{source}')
+
+        all_bodies = world.get_all_bodies()
+        joints = [b[1] for b in all_bodies if isinstance(b, tuple) and len(b) == 2 and b[0] == body]
+
+        ## single objects
+        if len(joints) == 0:
+            if 'movable' in categories:
+                self.collided_body_link[body] += 1
+
+        ## articulated objects
+        else:
+            if link is None:
+                if robot_body is None:  ## robot_body can be cloned gripper
+                    robot_body = self.body
+                links = get_links_collided(robot_body, body, names_as_keys=False)
+            else:
+                links = [link]
+            link_names = [f"{get_link_name(body, l)}|{n}" for l, n in links.items()]
+
+            attributed_links = []
+            for j in joints:
+                joint_obj = world.body_to_object((body, j))
+                found_links = [l for l in links if l in joint_obj.all_affected_links]
+                if len(found_links) > 0:
+                    attributed_links += [f for f in found_links if f not in attributed_links]
+                    self.collided_body_link[(body, j)] += 1
+            unattributed_links = [l for l in links if l not in attributed_links]
+
+            if verbose and len(unattributed_links) > 0:
+                print(f'\t!!!unattributed_links: \t{[get_link_name(body, l) for l in unattributed_links]}')
+
+        if verbose:
+            self.world.summarize_collisions()
+
+    def get_collisions_log(self):
+        return {k: v for k, v in sorted(self.collided_body_link.items(), key=lambda item: item[1], reverse=True)}
+
     def get_lisdf_string(self):
         return """
     <include name="{{name}}">
@@ -448,7 +502,7 @@ class MobileRobot(RobotAPI):
             stream_map.pop('test-inverse-reachability')
         return stream_map
 
-    def modify_pddl(self, pddlstream_problem):
+    def modify_pddl(self, pddlstream_problem, remove_operators=None):
         from pddlstream.language.constants import PDDLProblem
         domain_pddl, constant_map, stream_pddl, stream_map, init, goal = pddlstream_problem
         title = 'robots.modify_pddl |\t'
@@ -468,6 +522,12 @@ class MobileRobot(RobotAPI):
         else:
             print(f'{title}remove_predicate_by_name(CanMove)')
             domain_pddl = remove_predicate_by_name(domain_pddl, 'CanMove')
+
+        if remove_operators is not None:
+            for operator in remove_operators:
+                print(f'{title}remove_operator_by_name({operator})')
+                domain_pddl = remove_operator_by_name(domain_pddl, operator)
+
         return PDDLProblem(domain_pddl, constant_map, stream_pddl, stream_map, init, goal)
 
     def get_stream_info(self, **kwargs):
@@ -542,6 +602,7 @@ class MobileRobot(RobotAPI):
 
     def inverse_kinematics(self, arm, grasp_pose, obstacles,
                            verbose=True, visualize=False, debug=False):
+        start_time = time.time()
         tool_pose = self.get_tool_pose_for_ik(arm, grasp_pose)
         tool_link = self.get_tool_link(arm)
         arm_joints = self.get_arm_joints(arm)
@@ -560,7 +621,7 @@ class MobileRobot(RobotAPI):
                 if not collided(self.body, tag='robot.TracIK', **kwargs):
                     result = arm_conf
                     if verbose:
-                        print(title, f'found cfree ik for arm')
+                        print(title, f'found cfree ik for arm in {round(time.time() - start_time, 2)} seconds')
 
         if debug:
             set_renderer(False)

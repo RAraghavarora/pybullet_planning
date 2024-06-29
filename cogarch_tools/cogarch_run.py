@@ -33,7 +33,7 @@ SAVE_COLLISIONS = False
 def run_agent(agent_class=HierarchicalAgent, config='config_dev.yaml', config_root=PROBLEM_CONFIG_PATH,
               reset=False, load_initial_state=False, record_plans=False, comparing=False, data_generation=False,
               create_robot_fn=None, problem=None, exp_subdir=None, world_builder_args=dict(), robot_builder_args=dict(),
-              domain_modifier=None, object_reducer=None, **kwargs):
+              domain_modifier=None, object_reducer=None, serve_page=True, **kwargs):
     """
     problem:    name of the problem builder function to solve
     exp_dir:    sub-directory in `bullet/experiments` to save the planning data
@@ -89,17 +89,11 @@ def run_agent(agent_class=HierarchicalAgent, config='config_dev.yaml', config_ro
 
     state.world.add_to_planning_config('config', config)
     state.world.add_to_planning_config('config_root', config_root)
-
-    init = pddlstream_problem.init
-
-    ## load next test problem
-    if args.save_testcase:
-        disconnect()
-        return
     if load_initial_state:
         return state
 
     """ load planning agent """
+    init = pddlstream_problem.init
     solver_kwargs = get_pddlstream_kwargs(args, skeleton, subgoals, [copy.deepcopy(state), goals, init])
     if SAVE_COLLISIONS:
         solver_kwargs['evaluation_time'] = 10
@@ -108,23 +102,30 @@ def run_agent(agent_class=HierarchicalAgent, config='config_dev.yaml', config_ro
     agent.set_pddlstream_problem(problem_dict, state)
 
     # note = kwargs['world_builder_args'].get('note', None) if 'world_builder_args' in kwargs else None
-    agent = agent.init_experiment(args, domain_modifier=domain_modifier, object_reducer=object_reducer, comparing=comparing)
-    output_dir = agent.exp_dir
-    save_kwargs = dict(goal=goals, init=init, domain=domain, stream=stream, pddlstream_kwargs=solver_kwargs, problem=problem)
+    agent = agent.init_experiment(args, domain_modifier=domain_modifier, object_reducer=object_reducer,
+                                  comparing=comparing, serve_page=serve_page and not args.save_testcase)
+
+    ## load next test problem
+    if args.save_testcase:
+        disconnect()
+        return
 
     ## for visualizing observation
     if (hasattr(args, 'save_initial_observation') and args.save_initial_observation) or hasattr(agent, 'llamp_api'):
         state.world.initiate_observation_cameras()
         state.save_default_observation(output_path=join(agent.llamp_api.obs_dir, 'observation_0.png'))
 
+    output_dir = agent.exp_dir
+    save_kwargs = dict(goal=goals, init=init, domain=domain, stream=stream, pddlstream_kwargs=solver_kwargs, problem=problem)
+
     ## for VLM-TAMP project
     if hasattr(agent, 'llamp_api'):
         if agent.llamp_api.agent_state_path is not None:
             state = State(agent.world, objects=state.objects, observation_model=state.observation_model)
             agent.set_world_state(state)
-            state.world.save_test_case(output_dir, **save_kwargs)
         if problem_dict['llamp_api'].planning_mode is None:
             return
+        state.world.save_test_case(output_dir, **save_kwargs)
 
     """ before planning """
     if args.preview_scene and args.viewer:
@@ -191,10 +192,12 @@ def run_agent(agent_class=HierarchicalAgent, config='config_dev.yaml', config_ro
             print('failed to find any plans', data_path)
 
     clear_planning_dir(run_dir=dirname(__file__))
+    # disconnect()
+    reset_simulation()
 
-    if reset:
-        reset_simulation()
-    else:
-        disconnect()
+    # if reset:
+    #     reset_simulation()
+    # else:
+    #     disconnect()
 
     return agent.commands, output_dir

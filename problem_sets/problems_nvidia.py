@@ -1,6 +1,7 @@
 import random
 
 from pybullet_tools.utils import set_camera_pose
+from pybullet_tools.pose_utils import sample_obj_in_body_link_space
 
 from world_builder.loaders_partnet_kitchen import put_lid_on_braiser
 from world_builder.loaders_nvidia_kitchen import *
@@ -8,7 +9,8 @@ from world_builder.loaders_nvidia_kitchen import *
 from robot_builder.robot_builders import build_robot_from_args
 
 from problem_sets.problem_utils import create_world, pddlstream_from_state_goal, save_to_kitchen_worlds, \
-    problem_template, pull_actions, pick_place_actions, pull_with_link_actions, \
+    problem_template
+from world_builder.actions import pull_actions, pick_place_actions, pull_with_link_actions, \
     pick_sprinkle_actions
 
 
@@ -663,7 +665,8 @@ def test_pr2_cabinets(args):
 
 
 def test_nvidia_kitchen_domain(args, world_loader_fn, initial_xy=(1.5, 6), **kwargs):
-    set_camera_pose(camera_point=[3, 5, 3], target_point=[0, 6, 1])
+    set_camera_pose(camera_point=[3, 5, 3], target_point=[0, 6, 1])  ## target fridge
+    set_camera_pose(camera_point=[3, 7, 4], target_point=[0, 7, 1])
     if 'robot_builder_args' not in kwargs:
         kwargs['robot_builder_args'] = args.robot_builder_args
     kwargs['robot_builder_args'].update({
@@ -925,6 +928,8 @@ def test_kitchen_chicken_soup(args, **kwargs):
         cabinet_doors = [world.name_to_body(name) for name in ['chewie_door_left_joint', 'chewie_door_right_joint']]
         dishwasher_space = world.name_to_body('upper_shelf')
         dishwasher_joint = world.name_to_body('dishwasher_door')
+        cabinet_space = world.name_to_body('sektion')
+        braiser_body = world.name_to_body('braiserbody')
 
         joint = fridge_door  ## fridge_door | cabinet_doors[0] | cabinet_doors[1]
         # goals = ('test_joint_open', joint)
@@ -940,14 +945,33 @@ def test_kitchen_chicken_soup(args, **kwargs):
         goals = [("OpenedJoint", joint)]
         # goals = ("test_object_grasps", movable);
         # goals = [("Holding", arm, movable)]; world.open_joint(joint, extent=1)
-        # goals = [("OpenedJoint", joint), ("Holding", arm, movable)]
+        goals = [("OpenedJoint", joint), ("Holding", arm, movable)]
 
-        movable = movables[goal_object]
-        # goals = ("test_object_grasps", movable)
-        goals = [("Holding", arm, movable)]
+        # movable = movables[goal_object]
+        # # goals = ("test_object_grasps", movable)
+        # goals = [("Holding", arm, movable)]
         # goals = [("On", movable, counter)]
-        # goals = ('test_relpose_inside_gen', (movable, drawer_link))
-        # goals = [("In", movable, drawer_link)]
+        # goals = [("In", movable, cabinet_space)]
+        #
+        # # goals = ('test_relpose_inside_gen', (movable, drawer_link))
+        # # goals = [("In", movable, drawer_link)]
+        #
+        # # lid = world.name_to_body('braiserlid')
+        # # braiser =  world.name_to_body('braiserbody')
+        # # world.BODY_TO_OBJECT[counter].place_obj(world.BODY_TO_OBJECT[lid])
+        # # world.add_to_cat(lid, 'movable')
+        # # world.add_to_cat(braiser, 'surface')
+        # # goals = [("On", lid, braiser)]
+        #
+        # obj = world.name_to_object('chicken-leg')
+        # world.name_to_object('indigo_tmp').place_obj(world.name_to_object('braiserlid'))
+        # goals = [("In", movable, braiser_body)]
+        #
+        # movable = world.name_to_body('chicken-leg')
+        # goals = ("test_object_grasps", movable)
+
+        # sample_obj_in_body_link_space(obj, braiser_body, link=None, PLACEMENT_ONLY=False,
+        #                               draw=False, verbose=True, visualize=True, max_trial=3)
 
         #########################################################################
 
@@ -959,16 +983,26 @@ def test_kitchen_chicken_soup(args, **kwargs):
         # objects += [dishwasher_joint, dishwasher_space]
         # objects += cabinet_doors
 
+        subgoals = None
+        skeleton = []
+
         #########################################################################
 
         if goals[0][0] == "ClosedJoint":
             joint = goals[0][1]
             world.open_joint(joint, extent=0.5)
 
+        if goals == [("On", movable, counter)]:
+            skeleton += [('pick', arm, movable), ('arrange', arm, movable, counter)]
+            goals += [("Arranged", movable)]
+
+        if goals == [("In", movable, cabinet_space)]:
+            skeleton += [('pick', arm, movable), ('arrange', arm, movable, cabinet_space)]
+            goals += [("Arranged", movable)]
+            [world.open_joint(cc, extent=1) for cc in cabinet_doors]
+
         #########################################################################
 
-        subgoals = None
-        skeleton = []
         # skeleton += [(k, arm, goal_object) for k in pick_place_actions[:1]]
         # skeleton += [(k, arm, joint) for k in pull_actions]
         # skeleton += [(k, arm, drawer_joint) for k in pull_with_link_actions]
@@ -1119,6 +1153,7 @@ def test_kitchen_sprinkle(args, **kwargs):
         plate = load_plate_on_counter(world, counter_name='indigo_tmp')
 
         salt_shaker = world.name_to_body('salt-shaker')
+        salt_shaker = world.name_to_body('pepper-shaker')
         plate = world.name_to_body('plate')
         braiser = world.name_to_object('braiserbody')
         lid = world.name_to_object('braiserlid')
@@ -1129,36 +1164,93 @@ def test_kitchen_sprinkle(args, **kwargs):
         right_door = world.name_to_body('chewie_door_right_joint')
         arm = robot.arms[0]
 
-        world.add_to_cat(salt_shaker, 'sprinkler')
-        world.add_to_cat(braiser_bottom, 'region')
-
-        ## changes to env for different goals
-        side_surface.place_obj(lid)
-        world.open_joint(left_door)
-        world.open_joint(right_door)
-
         objects = []
         skeleton = []
         subgoals = []
 
-        """ step 1: sprinkle into """
-        # goals = [['Holding', arm, salt_shaker]]
-        # goals = ('test_pose_above_gen', (salt_shaker, plate))
-        # goals = [['SprinkledTo', salt_shaker, plate]]
-        goals = [['SprinkledTo', salt_shaker, braiser_bottom.pybullet_name]]
+        world.add_to_cat(salt_shaker, 'sprinkler')
+        world.add_to_cat(braiser_bottom, 'region')
+        world.add_to_cat(braiser, 'region')
 
-        """ step 2: remove obstacles """
-        put_lid_on_braiser(world, lid, braiser)
-        goals = [['On', lid, plate]]
-        goals = [['SprinkledTo', salt_shaker, braiser_bottom.pybullet_name]]
-        objects += [lid] + [plate] ## + [side_surface.pybullet_name]
-        skeleton += [(k, arm, lid) for k in pick_place_actions]
-        skeleton += [(k, arm, salt_shaker) for k in pick_sprinkle_actions]
+        ## changes to env for different goals
+        side_surface.place_obj(lid)
+        # world.open_joint(left_door)
+        # world.open_joint(right_door)
+        objects += [left_door, right_door]
+
+        """ test 1: sprinkle into """
+        # goals = [['OpenedJoint', right_door]]
+        goals = [['Holding', arm, salt_shaker]]
+        goals = ('test_pose_above_gen', (salt_shaker, plate))
+        # goals = [['SprinkledTo', salt_shaker, plate]]
+        # goals = [['SprinkledTo', salt_shaker, braiser_bottom.pybullet_name]]
+        # goals = [['SprinkledTo', salt_shaker, braiser.pybullet_name]]
+
+        """ test 2: remove movable obstacles """
+        # put_lid_on_braiser(world, lid, braiser)
+        # goals = [['On', lid, plate]]
+        # goals = [['SprinkledTo', salt_shaker, braiser_bottom.pybullet_name]]
+        # objects += [lid] + [plate] ## + [side_surface.pybullet_name]
+        # skeleton += [(k, arm, lid) for k in pick_place_actions]
+        # skeleton += [(k, arm, salt_shaker) for k in pick_sprinkle_actions]
+
+        """ test 3: remove articulated obstacles """
+        # world.close_joint(left_door)
+        # world.close_joint(right_door)
+        # goals = ('test_joint_open', right_door)
 
         ## need push rim action to open the joint
         if 'mobile_v3' in args.domain_pddl:
             goals = [['ClosedJoint', right_door]]
             objects += [right_door]
+
+        world.remove_bodies_from_planning(goals, exceptions=objects, skeleton=skeleton, subgoals=subgoals)
+
+        return {'goals': goals, 'skeleton': skeleton, 'subgoals': subgoals}
+
+    return test_nvidia_kitchen_domain(args, loader_fn, initial_xy=(2, 8), **kwargs)
+
+
+def test_kitchen_nudge_door(args, **kwargs):
+    """
+    Note: The grasp poses of the fork need to be hand-specified
+    """
+    def loader_fn(world, **world_builder_args):
+        robot = world.robot
+
+        open_doors_for = []  ## goal_object
+        objects, movables, movable_to_doors = load_open_problem_kitchen(world, open_doors_for=open_doors_for)
+
+        salt_shaker = world.name_to_body('salt-shaker')
+        pepper_shaker = world.name_to_body('pepper-shaker')
+        counter = world.name_to_body('indigo_tmp')
+        left_door = world.name_to_body('chewie_door_left_joint')
+        right_door = world.name_to_body('chewie_door_right_joint')
+        arm = robot.arms[0]
+
+        door = right_door
+        # world.open_joint(door, extent=0.7)
+        world.add_to_cat(salt_shaker, 'graspable')
+        world.add_to_cat(pepper_shaker, 'graspable')
+
+        objects = [door]
+        skeleton = []
+        subgoals = []
+
+        goals = ('test_pull_nudge_joint_positions', None)
+        goals = ('test_nudge_grasps', door)
+        goals = [("NudgedDoor", door)]
+        goals = [("NudgedDoor", right_door), ("Holding", arm, pepper_shaker)]
+        # goals = [("NudgedDoor", left_door), ("Holding", arm, salt_shaker)]
+        goals = [("Holding", arm, pepper_shaker)]
+
+        # if ("Holding", arm, pepper_shaker) in goals:
+        #     world.open_joint(left_door, extent=0.8)
+        #     world.open_joint(right_door, extent=0.8)
+
+        # goals = ('test_nudge_back_grasps', door)  ## not working yet
+        # goals = [("Closed", door)]
+        # goals = [("Closed", door)]
 
         world.remove_bodies_from_planning(goals, exceptions=objects, skeleton=skeleton, subgoals=subgoals)
 

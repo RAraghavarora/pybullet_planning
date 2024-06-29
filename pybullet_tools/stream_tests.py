@@ -18,7 +18,7 @@ from pybullet_tools.pr2_primitives import get_group_joints, get_base_custom_limi
     get_gripper_joints, GripperCommand, Simultaneous, create_trajectory
 from pybullet_tools.general_streams import get_grasp_list_gen, get_contain_list_gen, get_handle_grasp_list_gen, \
     get_handle_grasp_gen, get_compute_pose_kin, sample_joint_position_closed_gen, get_contain_gen, \
-    get_stable_list_gen, get_above_pose_gen
+    get_stable_list_gen, get_above_pose_gen, get_nudge_grasp_list_gen
 from pybullet_tools.grasp_utils import enumerate_rotational_matrices, \
     enumerate_translation_matrices, test_transformations_template
 
@@ -36,6 +36,7 @@ from pybullet_tools.flying_gripper_utils import get_se3_joints, get_cloned_se3_c
 from pddlstream.language.constants import AND
 
 from world_builder.entities import Object
+from world_builder.actions import PULL_UNTIL, NUDGE_UNTIL
 
 
 def process_debug_goals(state, goals, init):
@@ -46,6 +47,10 @@ def process_debug_goals(state, goals, init):
             goals = test_handle_grasps(state, args)
         elif test == 'test_object_grasps':
             goals = test_object_grasps(state, args)
+        elif test == 'test_nudge_grasps':
+            goals = test_nudge_grasps(state, args)
+        elif test == 'test_nudge_back_grasps':
+            goals = test_nudge_grasps(state, args, nudge_back=True)
         elif test == 'test_loaded_grasp_offset':
             goals = test_loaded_grasp_offset(state, args)
         elif test == 'test_grasp_ik':
@@ -62,6 +67,8 @@ def process_debug_goals(state, goals, init):
             goals, ff = test_joint_open(init, args)
         elif test == 'test_joint_closed':
             goals, ff = test_joint_closed(init, args)
+        elif test == 'test_pull_nudge_joint_positions':
+            goals = test_pull_nudge_joint_positions(state, args)
         elif test == 'test_door_pull_traj':
             goals = test_door_pull_traj(state, init, args)
         elif test == 'test_reachable_bconf':
@@ -151,15 +158,9 @@ def get_marker_grasps(state, marker, visualize=False):
     return grasps
 
 
-def test_handle_grasps(state, name='hitman_drawer_top_joint', visualize=False, retain_all=False, verbose=False):
+def test_handle_grasps(state, arg='hitman_drawer_top_joint', visualize=False, retain_all=False, verbose=False):
     """ visualize both grasp pose and approach pose """
-    if isinstance(name, str):
-        body_joint = state.world.name_to_body(name)
-    elif isinstance(name, tuple):
-        body_joint = name
-        name = state.world.BODY_TO_OBJECT[body_joint].name
-    else:
-        raise NotImplementedError(name)
+    body_joint, name = get_body_joint_and_name(state, arg)
 
     name_to_object = state.world.name_to_object
     funk = get_handle_grasp_list_gen(state, num_samples=24, visualize=False, retain_all=retain_all, verbose=verbose)
@@ -171,6 +172,53 @@ def test_handle_grasps(state, name='hitman_drawer_top_joint', visualize=False, r
     arm = state.robot.arms[0]
     goals = [("AtHandleGrasp", arm, body_joint, outputs[0][0])]
     return goals
+
+
+def get_body_joint_and_name(state, name):
+    if isinstance(name, str):
+        body_joint = state.world.name_to_body(name)
+    elif isinstance(name, tuple):
+        body_joint = name
+        name = state.world.BODY_TO_OBJECT[body_joint].name
+    else:
+        raise NotImplementedError(name)
+    return body_joint, name
+
+
+def test_nudge_grasps(state, arg='chewie_door_right_joint', nudge_back=False,
+                      visualize=False, retain_all=False, verbose=False):
+    body_joint, name = get_body_joint_and_name(state, arg)
+
+    name_to_object = state.world.name_to_object
+    funk = get_nudge_grasp_list_gen(state, nudge_back=nudge_back, num_samples=2,
+                                    visualize=False, retain_all=retain_all, verbose=verbose)
+    outputs = funk(body_joint)
+    if visualize:
+        body_pose = name_to_object(name).get_handle_pose()
+        visualize_grasps_by_quat(state, outputs, body_pose, verbose=verbose)
+    print(f'test_nudge_grasps({nudge_back}) -> generated len = {len(outputs)}: {outputs}')
+    pred = "NudgedDoor" if not nudge_back else "NudgedBackDoor"
+    goals = [(pred, body_joint)]
+    return goals
+
+
+def test_pull_nudge_joint_positions(state, joints=None):
+    funk_pull = sample_joint_position_gen(num_samples=2, p_max=PULL_UNTIL)
+    funk_nudge = sample_joint_position_gen(num_samples=2, p_max=NUDGE_UNTIL)
+    world = state.world
+
+    if joints is None:
+        joints = world.cat_to_bodies('door', get_all=True)
+
+    for joint in joints:
+        pstn1 = Position(joint)
+        name = world.get_debug_name(joint)
+        print(f'\njoint {name}')
+        for (pstn2,) in funk_pull(joint, pstn1):
+            print(f'\tfunk_pull({pstn1}) -> {pstn2}')
+            for (pstn3,) in funk_nudge(joint, pstn2):
+                print(f'\t\tfunk_nudge({pstn2}) -> {pstn3}')
+    sys.exit()
 
 
 def test_loaded_grasp_offset(state, args, test_translations=False, test_rotations=False,
@@ -366,7 +414,7 @@ def visualize_grasps_by_quat(state, outputs, body_pose, verbose=False):
 
 
 def test_grasp_ik(state, init, name='cabbage', visualize=True):
-    goals = test_grasps(state, name, visualize=False)
+    goals = test_object_grasps(state, name, visualize=False)
     body, grasp = goals[0][-2:]
     robot = state.robot
     custom_limits = robot.get_custom_limits()
