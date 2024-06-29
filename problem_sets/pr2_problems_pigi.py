@@ -12,7 +12,7 @@ def test_full_kitchen_domain(args, world_loader_fn, x_max=3, **kwargs):
         'initial_xy': (2, 4),
         'draw_base_limits': True
     })
-    return problem_template(args, robot_builder_fn=build_robot_from_args, world_loader_fn=world_loader_fn, **kwargs)
+    return problem_template(args, robot_builder_fn=build_robot_from_args, observation_model=None, world_loader_fn=world_loader_fn, **kwargs)
 
 
 def test_full_kitchen(args, **kwargs):
