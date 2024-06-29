@@ -12,8 +12,8 @@ planner:
   dataset_mode: true
   downward_time: 3
   evaluation_time: 30
-  stream_planning_timeout: 30
-  total_planning_timeout: 60
+  stream_planning_timeout: 60
+  total_planning_timeout: 120
   max_plans: 10
   max_solutions: 1
   max_skeletons: 300
@@ -38,7 +38,7 @@ data:
   exp_subdir: 'piginet_data'
   exp_name: 'default'
   record_problem: true
-  record_mp4: false
+  record_mp4: true
   save_testcase: false
 
 robot:
