@@ -30,36 +30,36 @@
   )
 
   ; Alternatively, could just do inverse visibility
-  ;(:stream test-vis-base
-  ;  :inputs (?o ?p ?bq)
-  ;  :domain (and (Pose ?o ?p) (BConf ?bq))
-  ;  :outputs ()
-  ;  :certified (VisRange ?o ?p ?bq)
-  ;)
-  ;(:stream test-reg-base
-  ;  :inputs (?o ?p ?bq)
-  ;  :domain (and (Pose ?o ?p) (BConf ?bq))
-  ;  :outputs ()
-  ;  :certified (and (RegRange ?o ?p ?bq) (VisRange ?o ?p ?bq))
-  ;)
+  (:stream test-vis-base
+    :inputs (?o ?p ?bq)
+    :domain (and (Pose ?o ?p) (BConf ?bq))
+    :outputs ()
+    :certified (VisRange ?o ?p ?bq)
+  )
+  (:stream test-reg-base
+    :inputs (?o ?p ?bq)
+    :domain (and (Pose ?o ?p) (BConf ?bq))
+    :outputs ()
+    :certified (and (RegRange ?o ?p ?bq) (VisRange ?o ?p ?bq))
+  )
 
-  ;(:stream sample-vis-base
-  ;  :inputs (?o ?p)
-  ;  :domain (Pose ?o ?p)
-  ;  :outputs (?bq)
-  ;  :certified (VisRange ?o ?p ?bq)
-  ;)
-  ;(:stream sample-reg-base
-  ;  :inputs (?o ?p)
-  ;  :domain (Pose ?o ?p)
-  ;  :outputs (?bq)
-  ;  :certified (and (VisRange ?o ?p ?bq) (RegRange ?o ?p ?bq))
-  ;)
-  ;(:stream inverse-visibility
-  ;  :inputs (?o ?p ?bq)
-  ;  :domain (VisRange ?o ?p ?bq)
-  ;  :outputs (?hq ?ht)
-  ;  :certified (and (Vis ?o ?p ?bq ?hq ?ht) ; Only set BConf on last iteration
-  ;                  (BConf ?bq) (Conf head ?hq) (Traj head ?ht))
-  ;)
+  (:stream sample-vis-base
+    :inputs (?o ?p)
+    :domain (Pose ?o ?p)
+    :outputs (?bq)
+    :certified (VisRange ?o ?p ?bq)
+  )
+  (:stream sample-reg-base
+    :inputs (?o ?p)
+    :domain (Pose ?o ?p)
+    :outputs (?bq)
+    :certified (and (VisRange ?o ?p ?bq) (RegRange ?o ?p ?bq))
+  )
+  (:stream inverse-visibility
+    :inputs (?o ?p ?bq)
+    :domain (VisRange ?o ?p ?bq)
+    :outputs (?hq ?ht)
+    :certified (and (Vis ?o ?p ?bq ?hq ?ht) ; Only set BConf on last iteration
+                    (BConf ?bq) (Conf head ?hq) (Traj head ?ht))
+  )
 )
