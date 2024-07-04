@@ -171,6 +171,29 @@ def create_kitchen(w=.5, h=.7):
 
     stove = create_box(w, w, h, color=(.75, .25, .25, 1))
     set_point(stove, (0, -2, h/2))
+    # Added by Raghav
+    import math
+    from .rag_utils import load_asset
+    from pybullet_planning.pybullet_tools.utils import wait_for_user
+    from examples.pybullet.utils.pybullet_tools.utils import Euler
+
+    # WALL_WIDTH = 1e-2
+    # wall_height = 2.5
+    # l=6
+    # wall = create_box(w=WALL_WIDTH, l=l, h=wall_height, color=(0, 0.25, 0.2, 1))
+    # wall_pose = Pose(point=Point(x=-5, y=0, z=wall_height/2), euler=Euler(yaw=math.pi))
+    # set_pose(wall, wall_pose)
+
+    body, file, scale = load_asset('fridge', x=2, y=2, yaw=1.5*math.pi, floor=floor,
+                    random_instance=True, verbose=True)
+    
+    body, file, scale = load_asset('MiniFridge', x=-2, y=-2, yaw=math.pi, floor=floor,
+                    random_instance=True, verbose=True)
+    
+    # body, file, scale = load_asset('cabbage', x=-2, y=0, yaw=math.pi, floor=floor,
+    #                 random_instance=True, verbose=True)
+    wait_for_user()
+    # import pdb; pdb.set_trace()
 
     return table, cabbage, sink, stove
 
