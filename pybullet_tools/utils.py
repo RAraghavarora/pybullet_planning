@@ -2904,7 +2904,11 @@ def clone_collision_shape(body, link, client=None):
     collision_data = get_collision_data(body, link)
     if not collision_data:
         return NULL_ID
-    assert (len(collision_data) == 1)
+    try:
+        assert (len(collision_data) == 1)
+    except AssertionError:
+        print(collision_data)
+        # import pdb; pdb.set_trace()
     # TODO: can do CollisionArray
     try:
         return collision_shape_from_data(collision_data[0], body, link, client)
