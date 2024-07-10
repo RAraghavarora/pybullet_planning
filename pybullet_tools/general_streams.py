@@ -530,8 +530,8 @@ def get_joint_position_open_gen(problem):
     return fn
 
 
-def sample_joint_position_list_gen(num_samples=6):
-    funk = sample_joint_position_gen(num_samples=6)
+def sample_joint_position_list_gen(world=None, num_samples=6):
+    funk = sample_joint_position_gen(world, num_samples=6)
 
     def gen(o, psn1):
         pstn_gen = funk(o, psn1)
@@ -581,9 +581,9 @@ def visualize_sampled_pstns(x_min, x_max, x_points):
     plt.show()
 
 
-def sample_joint_position_gen(problem, num_samples=14, p_max=PI, to_close=False, visualize=False, verbose=True):
+def sample_joint_position_gen(world, num_samples=14, p_max=PI, to_close=False, visualize=False, verbose=True):
     """ generate open positions if closed=False and closed positions if closed=True (deprecated) """
-    world = problem.world
+    # world = problem.world
 
     def fn(o, pstn1):
 

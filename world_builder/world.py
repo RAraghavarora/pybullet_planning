@@ -1179,7 +1179,7 @@ class World(WorldBase):
             body, joint = body
         if random_gen:
             from pybullet_tools.general_streams import sample_joint_position_list_gen
-            funk = sample_joint_position_list_gen()
+            funk = sample_joint_position_list_gen(self)
             pstns = funk((body, joint), Position((body, joint)))
             if len(pstns) == 0:
                 return
