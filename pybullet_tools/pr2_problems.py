@@ -157,7 +157,7 @@ def create_kitchen(w=.5, h=.7):
     floor = create_floor()
 
     # table = create_box(w, w, h, color=(.75, .75, .75, 1))
-    # set_point(table, (2, 0, h/2))
+    # set_point(table, (2, 0, h/2)) #R commenting table to be replaced by minifridge
 
     mass = 1
     #mass = 0.01
@@ -227,8 +227,10 @@ def create_kitchen(w=.5, h=.7):
 
     wait_for_user()
     # import pdb; pdb.set_trace()
+    table = minifridge
 
-    return fridge, cabbage, sink, stove
+    return table, cabbage, sink, stove
+    
 
 #######################################################
 
