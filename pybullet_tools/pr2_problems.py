@@ -156,8 +156,8 @@ def stacking_problem(arm='left', grasp_type='top'):
 def create_kitchen(w=.5, h=.7):
     floor = create_floor()
 
-    table = create_box(w, w, h, color=(.75, .75, .75, 1))
-    set_point(table, (2, 0, h/2))
+    # table = create_box(w, w, h, color=(.75, .75, .75, 1))
+    # set_point(table, (2, 0, h/2)) #R commenting table to be replaced by minifridge
 
     mass = 1
     #mass = 0.01
@@ -187,13 +187,15 @@ def create_kitchen(w=.5, h=.7):
     body, file, scale = load_asset('fridge', x=2, y=2, yaw=1.5*math.pi, floor=floor,
                     random_instance=True, verbose=True)
     
-    body, file, scale = load_asset('MiniFridge', x=-2, y=-2, yaw=math.pi, floor=floor,
+    minifridge, file, scale = load_asset('MiniFridge', x=2, y=0, yaw=math.pi, floor=floor,
                     random_instance=True, verbose=True)
     
     # body, file, scale = load_asset('cabbage', x=-2, y=0, yaw=math.pi, floor=floor,
     #                 random_instance=True, verbose=True)
-    wait_for_user()
+    # wait_for_user()
     # import pdb; pdb.set_trace()
+
+    table = minifridge
 
     return table, cabbage, sink, stove
 
