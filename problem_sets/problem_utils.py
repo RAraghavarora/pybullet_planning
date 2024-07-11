@@ -100,7 +100,7 @@ def problem_template(args, robot_builder_fn, robot_builder_args, world_loader_fn
                 goals = problem_dict['goal_sequence'][:1]
         problem_dict['goals'] = goals
 
-    set_all_static()
+    set_all_static() #R All bodies made static (no gravity?)
     state = State(world, objects=world.objects, observation_model=observation_model)
     exogenous = []
 

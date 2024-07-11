@@ -504,6 +504,8 @@ def pddlstream_from_state_goal(state, goals, domain_pddl='pr2_kitchen.pddl',
         print_goal(goal, world=world, print_fn=print_fn)
 
     world.summarize_body_indices(print_fn=print_fn)
+    #RA why state.facts is empty? 
+    state.facts = init # Added by RA
     return PDDLProblem(domain_pddl, constant_map, stream_pddl, stream_map, init, goal)
 
 

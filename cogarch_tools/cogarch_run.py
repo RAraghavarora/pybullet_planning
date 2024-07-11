@@ -99,6 +99,7 @@ def run_agent(agent_class=HierarchicalAgent, config='config_dev.yaml', config_ro
         solver_kwargs['evaluation_time'] = 10
     # agent = TeleOpAgent(state.world)
     agent = agent_class(state.world, init=init, goals=goals, processes=exogenous, pddlstream_kwargs=solver_kwargs)
+    # pybullet_planning/cogarch_tools/processes/pddlstream_agent.py
     agent.set_pddlstream_problem(problem_dict, state)
 
     # note = kwargs['world_builder_args'].get('note', None) if 'world_builder_args' in kwargs else None

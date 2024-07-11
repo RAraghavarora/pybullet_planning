@@ -891,7 +891,7 @@ class World(WorldBase):
                 elif items is None:
                     continue
             else:
-                items = literal[1:]
+                items = literal[1:] # Items are veggietomato, and minifridge::storage #R
             for item in items:
                 if not isinstance(item, str) and str(item) not in bodies:
                     if isinstance(item, Object):
@@ -2279,7 +2279,7 @@ class Agent(Process): # Decision
         if self.world.scramble:
             # if not self.requires_conf or self.requires_cloud:
             state.scramble()
-        action = self.policy(observation)
+        action = self.policy(observation) # defined at PDDLStreamAgent #R
         if verbose: print(f'   wrapped_transition \ chosen action in {round(time.time() - start_time, 4)} sec')
         start_time = time.time()
         state.restore()
