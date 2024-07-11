@@ -37,11 +37,15 @@
     (Registered ?o)
 
     (AConf ?a ?q) ;;
+    (DefaultAConf ?a ?q) ;;
 
+    (Controllable ?o) ;;
 
     (Door ?o) ;;
-    (Space ?r) ;;
+    (Space ?r) ;; Storage space (ex, minifridge)
     (Joint ?o) ;;
+    (Edible ?o) ;;
+    (OfType ?o ?t);;
     (Position ?o ?p)  ;; joint position of a body
     (AtPosition ?o ?p)  ;; joint position of a body
     (IsOpenedPosition ?o ?p)  ;;
