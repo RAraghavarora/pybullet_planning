@@ -156,8 +156,8 @@ def stacking_problem(arm='left', grasp_type='top'):
 def create_kitchen(w=.5, h=.7):
     floor = create_floor()
 
-    table = create_box(w, w, h, color=(.75, .75, .75, 1))
-    set_point(table, (2, 0, h/2))
+    # table = create_box(w, w, h, color=(.75, .75, .75, 1))
+    # set_point(table, (2, 0, h/2))
 
     mass = 1
     #mass = 0.01
@@ -174,8 +174,9 @@ def create_kitchen(w=.5, h=.7):
     # Added by Raghav
     import math
     from .rag_utils import load_asset
-    from pybullet_planning.pybullet_tools.utils import wait_for_user
-    from examples.pybullet.utils.pybullet_tools.utils import Euler
+    from pybullet_planning.pybullet_tools.utils import wait_for_user, get_aabb
+    
+    from examples.pybullet.utils.pybullet_tools.utils import Euler, add_body_name, get_bodies
 
     # WALL_WIDTH = 1e-2
     # wall_height = 2.5
@@ -184,18 +185,50 @@ def create_kitchen(w=.5, h=.7):
     # wall_pose = Pose(point=Point(x=-5, y=0, z=wall_height/2), euler=Euler(yaw=math.pi))
     # set_pose(wall, wall_pose)
 
-    body, file, scale = load_asset('fridge', x=2, y=2, yaw=1.5*math.pi, floor=floor,
-                    random_instance=True, verbose=True)
-    
-    body, file, scale = load_asset('MiniFridge', x=-2, y=-2, yaw=math.pi, floor=floor,
-                    random_instance=True, verbose=True)
-    
-    # body, file, scale = load_asset('cabbage', x=-2, y=0, yaw=math.pi, floor=floor,
-    #                 random_instance=True, verbose=True)
+    fridge, file, scale = load_asset('Fridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
+                    random_instance=False, verbose=True)
+
+    MIN_COUNTER_Z = 1.2
+    import random
+    center_z = MIN_COUNTER_Z - random.random() * 0.1 - 0.05
+    sinkbase, file, scale = load_asset('SinkBase', x=-2, y=0, h=1, yaw=math.pi, floor=floor,
+                    random_instance=False, verbose=True) # change l,w,h here
+    # sink, file, scale = load_asset('Sink', x=-2, y=1, yaw=math.pi, floor=floor,
+    #                 random_instance=False, verbose=True)
+
+    minifridge, file, scale = load_asset('minifridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
+                    random_instance=False, verbose=True)
+    pose = Pose(point=Point(x=-2, y=1, z=center_z), euler=Euler(yaw=math.pi))
+    set_pose(minifridge, pose) # looks good imo
+
+    # right_counter_upper = get_aabb(fridge).upper[1]
+    # left_counter_lower = get_aabb(fridge).lower[1]
+    # x_lower = get_aabb(sinkbase).lower[0]
+    # l = right_counter_upper - left_counter_lower
+    # y = (right_counter_upper + left_counter_lower) / 2
+    # WALL_WIDTH = 0.1
+    # wall_height = 3
+    # x = x_lower - WALL_WIDTH / 2
+
+    # from pybullet_tools.utils import WHITE
+    # from world_builder.world_utils import FURNITURE_WHITE, FURNITURE_GREY, FURNITURE_YELLOW
+    # color = {
+    #     'sink_003': (0.05, FURNITURE_WHITE),
+    #     'sink_005': (0.02, FURNITURE_WHITE),
+    #     'partnet_3ac64751-e075-488d-9938-9123dc88b2b6-0': (0.02, WHITE),
+    #     'partnet_e60bf49d6449cf37c5924a1a5d3043b0': (0.027, FURNITURE_WHITE),  ## 101176
+    #     'partnet_u82f2a1a8-3a4b-4dd0-8fac-6679970a9b29': (0.027, FURNITURE_GREY),  ## 100685
+    #     'partnet_553c586e128708ae7649cce35db393a1': (0.03, WHITE),  ## 100501
+    #     'partnet_549813be-3bd8-47dd-9a49-b51432b2f14c': (0.03, FURNITURE_YELLOW),  ## 100191
+    # }
+    # padding, color = (0.03, FURNITURE_YELLOW)
+
+    # wall = create_box(w=WALL_WIDTH, l=l, h=wall_height, color=color)
+
     wait_for_user()
     # import pdb; pdb.set_trace()
 
-    return table, cabbage, sink, stove
+    return fridge, cabbage, sink, stove
 
 #######################################################
 
