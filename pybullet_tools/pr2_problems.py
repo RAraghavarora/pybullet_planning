@@ -156,8 +156,8 @@ def stacking_problem(arm='left', grasp_type='top'):
 def create_kitchen(w=.5, h=.7):
     floor = create_floor()
 
-    # table = create_box(w, w, h, color=(.75, .75, .75, 1))
-    # set_point(table, (2, 0, h/2)) #R commenting table to be replaced by minifridge
+    table = create_box(w, w, h, color=(.75, .75, .75, 1))
+    set_point(table, (2, 0, h/2)) #R commenting table to be replaced by minifridge
 
     mass = 1
     #mass = 0.01
@@ -185,21 +185,25 @@ def create_kitchen(w=.5, h=.7):
     # wall_pose = Pose(point=Point(x=-5, y=0, z=wall_height/2), euler=Euler(yaw=math.pi))
     # set_pose(wall, wall_pose)
 
-    fridge, file, scale = load_asset('Fridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
-                    random_instance=False, verbose=True)
+    # fridge, file, scale = load_asset('Fridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
+    #                 random_instance=False, verbose=True)
 
     MIN_COUNTER_Z = 1.2
     import random
     center_z = MIN_COUNTER_Z - random.random() * 0.1 - 0.05
-    sinkbase, file, scale = load_asset('SinkBase', x=-2, y=0, h=1, yaw=math.pi, floor=floor,
-                    random_instance=False, verbose=True) # change l,w,h here
+    # sinkbase, file, scale = load_asset('SinkBase', x=-2, y=0, h=1, yaw=math.pi, floor=floor,
+    #                 random_instance=False, verbose=True) # change l,w,h here
     # sink, file, scale = load_asset('Sink', x=-2, y=1, yaw=math.pi, floor=floor,
     #                 random_instance=False, verbose=True)
 
     minifridge, file, scale = load_asset('minifridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
                     random_instance=False, verbose=True)
-    pose = Pose(point=Point(x=-2, y=1, z=center_z), euler=Euler(yaw=math.pi))
+    pose = Pose(point=Point(x=0, y=2, z=h/2), euler=Euler(yaw=math.pi))
     set_pose(minifridge, pose) # looks good imo
+
+    minifridge_region = create_box(.7, .7, .7, mass=mass, color=(0, 1, 0, 1))
+    set_point(minifridge_region, (0, 2, h/2 + .1/2))
+
 
     # right_counter_upper = get_aabb(fridge).upper[1]
     # left_counter_lower = get_aabb(fridge).lower[1]
@@ -225,11 +229,11 @@ def create_kitchen(w=.5, h=.7):
 
     # wall = create_box(w=WALL_WIDTH, l=l, h=wall_height, color=color)
 
-    wait_for_user()
+    # wait_for_user()
     # import pdb; pdb.set_trace()
-    table = minifridge
+    # sink = minifridge
 
-    return table, cabbage, sink, stove
+    return table, cabbage, sink, stove, minifridge_region
     
 
 #######################################################
