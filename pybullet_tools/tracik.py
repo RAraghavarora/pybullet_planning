@@ -4,7 +4,7 @@ import os.path
 import numpy as np
 from tracikpy import TracIKSolver
 
-from pybullet_tools.utils import Pose, multiply, invert, tform_from_pose, get_model_info, BASE_LINK, \
+from examples.pybullet.utils.pybullet_tools.utils import Pose, multiply, invert, tform_from_pose, get_model_info, BASE_LINK, \
     get_link_name, link_from_name, get_joint_name, joint_from_name, parent_link_from_joint, joints_from_names, \
     links_from_names, get_link_pose, draw_pose, set_joint_positions, get_joint_positions, get_joint_limits, \
     CIRCULAR_LIMITS, get_custom_limits
@@ -13,17 +13,17 @@ from pybullet_tools.utils import Pose, multiply, invert, tform_from_pose, get_mo
 class IKSolver(object):
     def __init__(self, body, tool_link, first_joint=None, tool_offset=Pose(), custom_limits={},
                  seed=None, max_time=5e-3, error=1e-5): #, **kwargs):
+        self.body = body
         self.tool_link = link_from_name(body, tool_link)
         if first_joint is None:
             self.base_link = BASE_LINK
         else:
-            first_joint = joint_from_name(body, first_joint)
+            first_joint = joint_from_name(body, first_joint) if isinstance(first_joint, str) else first_joint
             self.base_link = parent_link_from_joint(body, first_joint)
         # joints = get_joint_ancestors(body, self.tool_link)[1:] # get_link_ancestors
         # movable_joints = prune_fixed_joints(body, joints)
         # print([get_joint_name(body, joint) for joint in movable_joints])
 
-        self.body = body
         urdf_info = get_model_info(body)
         self.urdf_path = os.path.abspath(urdf_info.path)
         self.ik_solver = TracIKSolver(
@@ -33,6 +33,9 @@ class IKSolver(object):
             timeout=max_time, epsilon=error,
             solve_type='Speed', # Speed | Distance | Manipulation1 | Manipulation2
         )
+
+        self.links = links_from_names(self.body, self.link_names)
+        self.joints = joints_from_names(self.body, self.joint_names)
         self.ik_solver.joint_limits = list(get_custom_limits(
             self.body, self.joints, custom_limits=custom_limits, circular_limits=CIRCULAR_LIMITS))
 
@@ -40,6 +43,7 @@ class IKSolver(object):
         self.random_generator = np.random.RandomState(seed)
         self.solutions = []
         self.handles = []
+
     @property
     def robot(self):
         return self.body
@@ -55,12 +59,12 @@ class IKSolver(object):
     @property
     def joint_names(self):
         return self.ik_solver.joint_names
-    @property
-    def links(self):
-        return links_from_names(self.body, self.link_names)
-    @property
-    def joints(self):
-        return joints_from_names(self.body, self.joint_names)
+    # @property
+    # def links(self):
+    #     return links_from_names(self.body, self.link_names)
+    # @property
+    # def joints(self):
+    #     return joints_from_names(self.body, self.joint_names)
     @property
     def joint_limits(self):
         return self.ik_solver.joint_limits
@@ -115,14 +119,19 @@ class IKSolver(object):
     def sample_conf(self):
         return self.random_generator.uniform(*self.joint_limits)
 
-    def solve(self, tool_pose, seed_conf=None, pos_tolerance=1e-5, ori_tolerance=math.radians(5e-2)):
+    def solve(self, tool_pose, seed_conf=None, pos_tolerance=1e-5,
+              ori_tolerance=math.radians(5e-2), verbose=False):
+        import time
         pose = self.base_from_world(tool_pose)
         tform = tform_from_pose(pose)
         #if seed_conf is None: # TODO: will use np.random.default_rng()
         #    seed_conf = self.reference_conf
         bx, by, bz = pos_tolerance * np.ones(3)
         brx, bry, brz = ori_tolerance * np.ones(3)
+        start_time = time.time()
+        if verbose: print(f'---------- started ik')
         conf = self.ik_solver.ik(tform, qinit=seed_conf, bx=bx, by=by, bz=bz, brx=brx, bry=bry, brz=brz)
+        if verbose: print(f'---------- solved ik in {round(time.time()-start_time, 3)} sec')
         self.solutions.append((pose, conf))
         return conf
     def solve_current(self, tool_pose, **kwargs): # solve_closest
@@ -133,14 +142,19 @@ class IKSolver(object):
         return self.solve(tool_pose, seed_conf=self.reference_conf, **kwargs)
     def solve_warm(self, tool_pose, **kwargs):
         return self.solve(tool_pose, seed_conf=self.last_solution, **kwargs)
-    def generate(self, tool_pose, include_failures=False, **kwargs):
-        #start_time = time.time()
-        while True:
-            #print(elapsed_time(start_time))
+    def generate(self, tool_pose, include_failures=False, max_attempts=30, verbose=False, **kwargs):
+        attempt = 0
+        while attempt < max_attempts:
+            attempt += 1
             seed_conf = self.sample_conf()
             solution_conf = self.solve(tool_pose, seed_conf=seed_conf, **kwargs)
             if include_failures or (solution_conf is not None):
+                if verbose: print(f'tracik.generate {attempt} succeed')
                 yield solution_conf
+            else:
+                if verbose: print(f'tracik.generate {attempt} failed')
+        if verbose: print(f'tracik.generate exit loop to {max_attempts}')
+        yield solution_conf
     def __str__(self):
         return '{}(body={}, tool={}, base={}, joints={})'.format(
             self.__class__.__name__, self.robot, self.tool_name, self.base_name, list(self.joint_names))
