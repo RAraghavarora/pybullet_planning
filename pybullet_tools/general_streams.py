@@ -587,12 +587,12 @@ def sample_joint_position_gen(world, num_samples=14, p_max=PI, to_close=False, v
 
     def fn(o, pstn1):
 
-        if world.learned_position_list_gen is not None:
-            pstns = world.learned_position_list_gen(world, o, pstn1, num_samples=num_samples)
-            if pstns is not None:
-                positions = [(Position(o, p),) for p in pstns]
-                for pstn in positions:
-                    yield pstn
+        # if world.learned_position_list_gen is not None:
+        #     pstns = world.learned_position_list_gen(world, o, pstn1, num_samples=num_samples)
+        #     if pstns is not None:
+        #         positions = [(Position(o, p),) for p in pstns]
+        #         for pstn in positions:
+        #             yield pstn
 
         is_drawer = pstn1.is_prismatic()
 
