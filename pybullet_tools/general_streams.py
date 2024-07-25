@@ -23,7 +23,7 @@ from pybullet_tools.pose_utils import sample_obj_in_body_link_space, is_containe
     ObjAttachment, sample_obj_on_body_link_surface, has_much_larger_aabb, adjust_sampled_pose
 from pybullet_tools.camera_utils import set_camera_target_body
 from pybullet_tools.grasp_utils import get_hand_grasps, sample_from_pickled_grasps, is_top_grasp
-
+from examples.pybullet.utils.pybullet_tools.grasp_utils import get_hand_grasps
 
 class LinkPose(Pose):
     num = count()
@@ -379,7 +379,8 @@ def get_contain_gen(problem, collisions=True, num_samples=20, verbose=False, rel
     from pybullet_tools.pr2_primitives import Pose
     from world_builder.entities import Object
     obstacles = problem.fixed if collisions else []
-    world = problem.world
+    # world = problem.world
+    world = None #R for pr2 belief
 
     def gen(body, space):
         title = f"  get_contain_gen({body}, {space}) |"
@@ -393,24 +394,24 @@ def get_contain_gen(problem, collisions=True, num_samples=20, verbose=False, rel
         else:
             spaces = [space]
 
-        ## ------------------------------------------------
-        if learned_sampling and world.learned_pose_list_gen is not None:
-            result = world.learned_pose_list_gen(world, body, spaces, num_samples=num_samples-5, verbose=verbose)
-            if result is not None:
-                for body_pose in result:
-                    p = Pose(body, value=body_pose, support=space)
-                    p.assign()
-                    # coo = collided(body, obs, verbose=verbose,
-                    #                tag='contain_gen_database', world=world)
-                    # if not coo:
-                    attempts += 1
-                    if relpose:
-                        p = RelPose2(body, value=body_pose, support=space)
-                    yield (p,)
+        # ## ------------------------------------------------
+        # if learned_sampling and world.learned_pose_list_gen is not None:
+        #     result = world.learned_pose_list_gen(world, body, spaces, num_samples=num_samples-5, verbose=verbose)
+        #     if result is not None:
+        #         for body_pose in result:
+        #             p = Pose(body, value=body_pose, support=space)
+        #             p.assign()
+        #             # coo = collided(body, obs, verbose=verbose,
+        #             #                tag='contain_gen_database', world=world)
+        #             # if not coo:
+        #             attempts += 1
+        #             if relpose:
+        #                 p = RelPose2(body, value=body_pose, support=space)
+        #             yield (p,)
 
-            if verbose:
-                print(title, 'sample without learned_pose_list_gen')
-        ## ------------------------------------------------
+        #     if verbose:
+        #         print(title, 'sample without learned_pose_list_gen')
+        # ## ------------------------------------------------
 
         if isinstance(space, int):
             print('trying to sample pose inside body', space)
@@ -852,16 +853,18 @@ def get_handle_grasp_gen(problem, collisions=False, max_samples=2,
                          randomize=False, visualize=False, retain_all=False, verbose=False):
     collisions = True
     obstacles = problem.fixed if collisions else []
-    world = problem.world
-    robot = problem.robot
+    # world = problem.world
+    robot = problem.robot_instance
     title = 'general_streams.get_handle_grasp_gen |'
 
     def fn(body_joint):
         body, joint = body_joint
-        is_knob = body_joint in world.cat_to_bodies('knob')
+        knobs = []
+        # is_knob = body_joint in world.cat_to_bodies('knob')
+        is_knob = body_joint in knobs
         handle_link = get_handle_link(body_joint, is_knob=is_knob)
         # print(f'{title} handle_link of body_joint {body_joint} is {handle_link}')
-
+        world = None
         grasps = get_hand_grasps(world, body, link=handle_link, handle_filter=True,
                                  visualize=visualize, retain_all=retain_all, length_variants=True, verbose=verbose)
 

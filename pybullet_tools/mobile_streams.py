@@ -23,10 +23,11 @@ from pybullet_tools.grasp_utils import add_to_jp2jp
 
 def get_ir_sampler(problem, custom_limits={}, max_attempts=40, collisions=True,
                    learned=True, verbose=False, visualize=False):
-    robot = problem.robot
-    world = problem.world
+    robot = problem.robot_instance
+    # world = problem.world
+    world = None
     obstacles = [o for o in problem.fixed if o not in problem.floors] if collisions else []
-    grippers = {arm: problem.get_gripper(arm=arm, visual=True) for arm in robot.arms}
+    grippers = {arm: problem.get_gripper(arm=arm) for arm in robot.arms}
     heading = f'   mobile_streams.get_ir_sampler | '
 
     def gen_fn(arm, obj, pose, grasp):
@@ -114,10 +115,12 @@ def get_ir_sampler(problem, custom_limits={}, max_attempts=40, collisions=True,
 
 def get_ik_fn_old(problem, custom_limits={}, collisions=True, teleport=False,
                   ACONF=False, verbose=False, visualize=False, resolution=DEFAULT_RESOLUTION):
-    robot = problem.robot
-    world = problem.world
+    robot = problem.robot_instance
+    # world = problem.world
+    world = None
     obstacles = problem.fixed if collisions else []
-    ignored_pairs = world.ignored_pairs
+    # ignored_pairs = world.ignored_pairs
+    ignored_pairs = []
     # world_saver = WorldSaver()
     title = 'mobile_streams.get_ik_fn_old:\t'
 
@@ -201,8 +204,9 @@ def get_ik_gen_old(problem, max_attempts=80, collisions=True, learned=True, tele
                                 max_attempts=max_attempts, verbose=verbose, visualize=visualize, **kwargs)
     ik_fn = get_ik_fn_old(problem, collisions=collisions, teleport=teleport, verbose=False,
                           ACONF=ACONF, visualize=visualize, **kwargs)
-    robot = problem.robot
-    world = problem.world
+    robot = problem.robot_instance
+    # world = problem.world
+    world = None
     obstacles = problem.fixed if collisions else []
     heading = 'mobile_streams.get_ik_gen | '
 
@@ -923,12 +927,14 @@ def get_pull_door_handle_motion_gen(problem, custom_limits={}, collisions=True, 
     visualize = visualize and has_gui()
     if teleport:
         num_intervals = 1
-    robot = problem.robot
-    world = problem.world
+    robot = problem.robot_instance
+    # world = problem.world
+    world = None
     saver = BodySaver(robot)
     # world_saver = WorldSaver()
     obstacles = problem.fixed if collisions else []
-    ignored_pairs = problem.ignored_pairs if collisions else []
+    # ignored_pairs = problem.ignored_pairs if collisions else []
+    ignored_pairs = [] #R TODO: FIX THIS!!!
 
     def fn(a, o, pst1, pst2, g, bq1, aq1, fluents=[]):
         if fluents:
@@ -985,9 +991,10 @@ def get_pull_door_handle_with_link_motion_gen(problem, custom_limits={}, collisi
 
 def get_arm_ik_fn(problem, custom_limits={}, resolution=DEFAULT_RESOLUTION,
                   collisions=True, teleport=False, verbose=False):
-    robot = problem.robot
+    robot = problem.robot_instance
     obstacles = problem.fixed if collisions else []
-    world = problem.world
+    # world = problem.world
+    world = None
     world_saver = WorldSaver()
     title = 'mobile_streams.get_arm_ik_fn:\t'
 
