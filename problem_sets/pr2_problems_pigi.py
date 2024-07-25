@@ -126,12 +126,12 @@ def sample_full_kitchen_goal_rearrange_to_storage(world, movables, counters):
     goals = []
 
     """ open some doors """
-    for door in container.doors:
-        if (case == 1 and random.random() < 0.3) or \
-                (case in [21, 31] and random.random() < 0.5) or \
-                (case in [11, 321] and random.random() < 0.5):
-            world.open_joint(door[0], door[1], random_gen=True)
-        skeleton.extend([(k, arm, door) for k in pull_actions])
+    # for door in container.doors:
+    #     if (case == 1 and random.random() < 0.3) or \
+    #             (case in [21, 31] and random.random() < 0.5) or \
+    #             (case in [11, 321] and random.random() < 0.5):
+    #         world.open_joint(door[0], door[1], random_gen=True)
+    #     skeleton.extend([(k, arm, door) for k in pull_actions])
     if case == 991:
         world.open_doors_drawers(container, random_gen=True)
         foods = foods[:1]
@@ -158,7 +158,7 @@ def sample_full_kitchen_goal_rearrange_to_storage(world, movables, counters):
 
     # ## debugging
     # goals = ('test_pose_inside_gen', (foods[0], container_space))
-    goals = [('Holding', arm, food) for food in foods[:1]]
+    # goals = [('Holding', arm, food) for food in foods[:1]]
 
     if case in [21, 31]:  ##
         """ rearrange from braiser / sink to cabinet / fridge """
