@@ -29,6 +29,7 @@
     (AtAConf ?a ?q) ;;
 
     (On ?o ?r)
+    (In ?o ?r)
     (Holding ?a ?o)
 
     (Uncertain ?o)
@@ -37,11 +38,15 @@
     (Registered ?o)
 
     (AConf ?a ?q) ;;
+    (DefaultAConf ?a ?q) ;;
 
+    (Controllable ?o) ;;
 
     (Door ?o) ;;
-    (Space ?r) ;;
+    (Space ?r) ;; Storage space (ex, minifridge)
     (Joint ?o) ;;
+    (Edible ?o) ;;
+    (OfType ?o ?t);;
     (Position ?o ?p)  ;; joint position of a body
     (AtPosition ?o ?p)  ;; joint position of a body
     (IsOpenedPosition ?o ?p)  ;;
@@ -64,6 +69,10 @@
     (CanUngrasp)
     (CanPull ?a)
     (UngraspBConf ?q)
+    (Picked ?o)
+    (Placed ?o)
+    (Pulled ?o)
+    (StoredInSpace ?t ?r)
   )
   (:functions
     (MoveCost)
@@ -87,15 +96,17 @@
   (:action pick
     :parameters (?a ?o ?p ?g ?q ?t)
     :precondition (and (Kin ?a ?o ?p ?g ?q ?t)
-                       (Registered ?o) (AtPose ?o ?p) (HandEmpty ?a) (AtBConf ?q))
+                       (Registered ?o) (AtPose ?o ?p) (HandEmpty ?a) (AtBConf ?q) (Graspable ?o) (not (Picked ?o)) )
     :effect (and (AtGrasp ?a ?o ?g) (CanMove)
-                 (not (AtPose ?o ?p)) (not (HandEmpty ?a))
+                 (not (AtPose ?o ?p)) (not (HandEmpty ?a)) (Picked ?o)
                  (increase (total-cost) (PickCost)))
   )
   (:action place
     :parameters (?a ?o ?p ?g ?q ?t)
     :precondition (and (Kin ?a ?o ?p ?g ?q ?t)
-                       (AtGrasp ?a ?o ?g) (AtBConf ?q)) ; (Localized ?o)
+                       (AtGrasp ?a ?o ?g) (AtBConf ?q)
+                       (Graspable ?o)
+                       ) ; (Localized ?o)
     :effect (and (AtPose ?o ?p) (HandEmpty ?a) (CanMove)
                  (not (AtGrasp ?a ?o ?g))
                  (increase (total-cost) (PlaceCost)))
@@ -133,6 +144,23 @@
                       (AtGrasp ?a ?o ?g)))
   )
 
+  (:derived (Holding ?a ?o)
+    (exists (?g) (and (Arm ?a) (Grasp ?o ?g)
+                      (AtGrasp ?a ?o ?g)))
+  )
+
+  (:derived (OpenedJoint ?o)
+    (exists (?pstn) (and (Joint ?o) (Position ?o ?pstn) (AtPosition ?o ?pstn)
+                      (IsOpenedPosition ?o ?pstn)))
+  )
+  (:derived (ClosedJoint ?o)
+    (exists (?pstn) (and (Joint ?o) (Position ?o ?pstn) (AtPosition ?o ?pstn)
+                      (IsClosedPosition ?o ?pstn)))
+  )
+  (:derived (HandleGrasped ?a ?o)
+    (exists (?hg) (and (Arm ?a) (Joint ?o) (HandleGrasp ?o ?hg)
+                    (AtHandleGrasp ?a ?o ?hg)))
+  )
   ;; Copied from other domain by Raghav
   (:action grasp_handle
       :parameters (?a ?o ?p ?g ?q ?aq1 ?aq2 ?t)
@@ -184,4 +212,11 @@
               )
     )
 
+    (:action declare_store_in_space
+      :parameters (?t ?r)
+      :precondition (and (Space ?r)
+                         (forall (?o) (imply (OfType ?o ?t) (In ?o ?r)))
+                    )
+      :effect (and (StoredInSpace ?t ?r))
+    )
 )
