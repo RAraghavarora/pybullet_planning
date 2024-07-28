@@ -203,7 +203,13 @@ class WorldBase(object):
     ###########################################################################
 
     def remove_handles(self):
-        remove_handles(self.handles)
+        try:
+            from pybullet_tools.utils import remove_handles
+            remove_handles(self.handles)
+        except KeyError:
+            from examples.pybullet.utils.pybullet_tools.utils import remove_handles
+            # Go to pddlstream utils instead of pybullet_tools
+            remove_handles(self.handles)
 
     def add_handles(self, handles):
         self.handles.extend(handles)
