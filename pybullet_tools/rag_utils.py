@@ -3,9 +3,10 @@ from os.path import join, isdir, isfile, dirname, abspath, basename, split
 from examples.pybullet.utils.pybullet_tools.utils import set_pose, get_pose, connect, clone_world, \
     disconnect, set_client, add_data_path, WorldSaver, wait_for_user, get_joint_positions, get_configuration, \
     set_configuration, ClientSaver, HideOutput, is_center_stable, add_body_name, draw_base_limits, VideoSaver, load_model, \
-    create_box, BROWN, get_aabb, stable_z, Pose, Point, Euler, set_color, WHITE, RGBA
+    create_box, BROWN, get_aabb, stable_z, Pose, Point, Euler, set_color, WHITE, RGBA, get_link_pose, multiply, invert
 from pybullet_tools.utils import get_aabb_extent, remove_body
 import pybullet
+from pybullet_planning.pybullet_tools.pose_utils import ObjAttachment, Attachment
 
 DARK_GREEN = RGBA(35/255, 66/255, 0, 1)
 
@@ -168,3 +169,71 @@ def get_body_joint_position(body):
     position = get_joint_position(body[0], body[1]) if joint_positions is None else joint_positions[body]
     position = Position(body, position)
     return position
+
+
+############################### Commands #####################################
+
+
+def add_attachment(robot=None, obj=None, parent=-1, parent_link=None, attach_distance=0.1,
+                   OBJ=True, verbose=False, debug=False):
+    """ can attach without contact """
+    new_attachments = {}
+
+    if parent == -1:  ## use robot as parent
+        parent = robot
+        link1 = None
+        parent_link = robot.base_link
+        OBJ = False
+    else:
+        link1 = parent_link
+
+    joint = None
+    if isinstance(obj, tuple):
+        from pybullet_tools.general_streams import get_handle_link
+        link1 = get_handle_link(obj)
+        obj, joint = obj
+
+    # collision_infos = get_closest_points(parent, obj, link1=link1, max_distance=INF)
+    # min_distance = min([INF] + [info.contactDistance for info in collision_infos])
+    # if True or attach_distance is None or (min_distance < attach_distance):  ## (obj not in new_attachments) and
+    if True:
+        if joint is not None:
+            attachment = create_attachment(parent, parent_link, obj, child_link=link1, child_joint=joint, OBJ=OBJ)
+        else:
+            attachment = create_attachment(parent, parent_link, obj, OBJ=OBJ)
+        new_attachments[obj] = attachment  ## may overwrite older attachment
+        if verbose:
+            print(f'pose_utils.add_attachment | {attachment}')
+        if debug:
+            attachment.assign()
+    return new_attachments
+
+
+def create_attachment(parent, parent_link, child, child_link=None, child_joint=None, OBJ=False):
+    parent_link_pose = get_link_pose(parent.body, parent_link)
+    child_pose = get_pose(child)
+    grasp_pose = multiply(invert(parent_link_pose), child_pose)
+    if OBJ:  ## attachment between objects
+        return ObjAttachment(parent, parent_link, grasp_pose, child)
+    return Attachment(parent, parent_link, grasp_pose, child,
+                      child_link=child_link, child_joint=child_joint)
+
+
+def add_attachment_in_world(world=None, obj=None, parent=-1, parent_link=None, attach_distance=0.1, **kwargs):
+
+    from robot_builder.robots import RobotAPI
+
+    ## can attach without contact
+    new_attachments = add_attachment(robot=world.robot.body, obj=obj, parent=parent, parent_link=parent_link,
+                                     attach_distance=attach_distance, **kwargs)
+
+    ## update object info
+    if hasattr(world, 'BODY_TO_OBJECT'):
+        for body, attachment in new_attachments.items():
+            obj = world.BODY_TO_OBJECT[body]
+            if hasattr(obj, 'supporting_surface'):
+                if isinstance(parent, RobotAPI) and obj.supporting_surface is not None:
+                    obj.remove_supporting_surface()
+                else:
+                    obj.change_supporting_surface(parent)
+    return new_attachments
