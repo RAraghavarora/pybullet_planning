@@ -585,9 +585,13 @@ class MobileRobot(RobotAPI):
         """ by default, assume IKFast is not compiled """
         kwargs = dict(custom_limits=self.custom_limits)
         if has_tracik():
-            from pybullet_tools.tracik import IKSolver
             if self.ik_solvers[arm] is None:
-                self.ik_solvers[arm] = IKSolver(self.body, tool_link=tool_link, first_joint=arm_joint, **kwargs)
+                try:
+                    from pybullet_tools.tracik import IKSolver
+                    self.ik_solvers[arm] = IKSolver(self.body, tool_link=tool_link, first_joint=arm_joint, **kwargs)
+                except AttributeError:
+                    from examples.pybullet.utils.pybullet_tools.tracik import IKSolver
+                    self.ik_solvers[arm] = IKSolver(self.body, tool_link=tool_link, first_joint=arm_joint, **kwargs)
             current_conf = self.get_arm_conf(arm).values
             return self.ik_solvers[arm].solve(tool_pose, seed_conf=current_conf)
 
@@ -860,67 +864,135 @@ class PR2Robot(MobileRobot):
             if verbose:
                 print(f'... finished {title} -> {result} in {round(time.time() - start, 2)}s')
 
-        with LockRenderer(True):
-            funk = get_grasp_list_gen(state, verbose=verbose, visualize=visualize, top_grasp_tolerance=PI / 4)
-            test = None
-            outputs = funk(obj)
+        try:
+            from pybullet_tools.utils import LockRenderer
+            with LockRenderer(True):
+                funk = get_grasp_list_gen(state, verbose=verbose, visualize=visualize, top_grasp_tolerance=PI / 4)
+                test = None
+                outputs = funk(obj)
 
-            kwargs = dict(collisions=True, teleport=False)
-            funk2 = get_ik_gen_old(state, max_attempts=max_attempts, ir_only=True, learned=False,
-                                   custom_limits=state.robot.custom_limits,
-                                   verbose=verbose, visualize=visualize, **kwargs)
+                kwargs = dict(collisions=True, teleport=False)
+                funk2 = get_ik_gen_old(state, max_attempts=max_attempts, ir_only=True, learned=False,
+                                    custom_limits=state.robot.custom_limits,
+                                    verbose=verbose, visualize=visualize, **kwargs)
 
-            funk3 = get_ik_fn_old(state, verbose=verbose, visualize=visualize, **kwargs)
-            for (grasp, ) in outputs:
-                ## test_approach_path
-                result = True
-                for b2, p2 in movable_poses:
-                    if test is None:
-                        test = get_cfree_approach_pose_test(state)
-                    result = test(body, p, grasp, b2, p2)
-                    if body not in self.possible_obstacles:
-                        self.possible_obstacles[body] = set()
+                funk3 = get_ik_fn_old(state, verbose=verbose, visualize=visualize, **kwargs)
+                for (grasp, ) in outputs:
+                    ## test_approach_path
+                    result = True
+                    for b2, p2 in movable_poses:
+                        if test is None:
+                            test = get_cfree_approach_pose_test(state)
+                        result = test(body, p, grasp, b2, p2)
+                        if body not in self.possible_obstacles:
+                            self.possible_obstacles[body] = set()
+                        if not result:
+                            self.possible_obstacles[body].add(b2)
+                        elif b2 in self.possible_obstacles[body]:
+                            self.possible_obstacles[body].remove(b2)
+                        if debug:
+                            print(title, f'| test_approach_path({body}, {b2})', result)
                     if not result:
-                        self.possible_obstacles[body].add(b2)
-                    elif b2 in self.possible_obstacles[body]:
-                        self.possible_obstacles[body].remove(b2)
-                    if debug:
-                        print(title, f'| test_approach_path({body}, {b2})', result)
-                if not result:
-                    continue
+                        continue
 
-                ## find bconf
-                gen = funk2(arm, body, p, grasp)
-                try:
-                    result = next(gen)
-                    if result is not None:
-                        (bconf,) = result
-                        ## find aconf
-                        result = funk3(arm, body, p, grasp, bconf, fluents=fluents)
+                    ## find bconf
+                    gen = funk2(arm, body, p, grasp)
+                    try:
+                        result = next(gen)
                         if result is not None:
-                            if verbose:
-                                print(title, f'succeeded', bconf)
+                            (bconf,) = result
+                            ## find aconf
+                            result = funk3(arm, body, p, grasp, bconf, fluents=fluents)
+                            if result is not None:
+                                if verbose:
+                                    print(title, f'succeeded', bconf)
 
-                            if debug and False:
-                                answer = query_yes_no(f"play reachability test traj?", default='no')
-                                if answer:
-                                    (cmd,) = result
-                                    bconf.assign()
-                                    attachment = grasp.get_attachment(self, arm, visualize=False)
-                                    play_trajectory(cmd, p=p, attachment=attachment)
+                                if debug and False:
+                                    answer = query_yes_no(f"play reachability test traj?", default='no')
+                                    if answer:
+                                        (cmd,) = result
+                                        bconf.assign()
+                                        attachment = grasp.get_attachment(self, arm, visualize=False)
+                                        play_trajectory(cmd, p=p, attachment=attachment)
 
-                            restore(True)
-                            return True
-                        else:
-                            if verbose:
-                                print(title, f'IK failed')
-                except Exception:
-                    if verbose:
-                        print(title, f'IR failed')
-                    pass
+                                restore(True)
+                                return True
+                            else:
+                                if verbose:
+                                    print(title, f'IK failed')
+                    except Exception:
+                        if verbose:
+                            print(title, f'IR failed')
+                        pass
 
-            restore(False)
-            return False
+                restore(False)
+                return False
+        except KeyError:
+            from examples.pybullet.utils.pybullet_tools.utils import LockRenderer
+            
+            with LockRenderer(True):
+                from examples.pybullet.utils.pybullet_tools.general_streams import get_grasp_list_gen
+                funk = get_grasp_list_gen(state, verbose=verbose, visualize=visualize, top_grasp_tolerance=PI / 4)
+                test = None
+                outputs = funk(obj)
+
+                kwargs = dict(collisions=True, teleport=False)
+                funk2 = get_ik_gen_old(state, max_attempts=max_attempts, ir_only=True, learned=False,
+                                    custom_limits=state.robot.custom_limits,
+                                    verbose=verbose, visualize=visualize, **kwargs)
+
+                funk3 = get_ik_fn_old(state, verbose=verbose, visualize=visualize, **kwargs)
+                for (grasp, ) in outputs:
+                    ## test_approach_path
+                    result = True
+                    for b2, p2 in movable_poses:
+                        if test is None:
+                            test = get_cfree_approach_pose_test(state)
+                        result = test(body, p, grasp, b2, p2)
+                        if body not in self.possible_obstacles:
+                            self.possible_obstacles[body] = set()
+                        if not result:
+                            self.possible_obstacles[body].add(b2)
+                        elif b2 in self.possible_obstacles[body]:
+                            self.possible_obstacles[body].remove(b2)
+                        if debug:
+                            print(title, f'| test_approach_path({body}, {b2})', result)
+                    if not result:
+                        continue
+
+                    ## find bconf
+                    gen = funk2(arm, body, p, grasp)
+                    try:
+                        result = next(gen)
+                        if result is not None:
+                            (bconf,) = result
+                            ## find aconf
+                            result = funk3(arm, body, p, grasp, bconf, fluents=fluents)
+                            if result is not None:
+                                if verbose:
+                                    print(title, f'succeeded', bconf)
+
+                                if debug and False:
+                                    answer = query_yes_no(f"play reachability test traj?", default='no')
+                                    if answer:
+                                        (cmd,) = result
+                                        bconf.assign()
+                                        attachment = grasp.get_attachment(self, arm, visualize=False)
+                                        play_trajectory(cmd, p=p, attachment=attachment)
+
+                                restore(True)
+                                return True
+                            else:
+                                if verbose:
+                                    print(title, f'IK failed')
+                    except Exception:
+                        if verbose:
+                            print(title, f'IR failed')
+                        pass
+
+                restore(False)
+                return False
+        
 
     def check_reachability_space(self, body_link, state, body=None, fluents=[], num_samples=5, **kwargs):
 

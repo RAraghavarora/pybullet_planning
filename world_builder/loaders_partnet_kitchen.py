@@ -1172,9 +1172,9 @@ def load_all_furniture(world, ordering, floor, base, start, color, wall_height,
 
     for direction in ['+y', '-y']:
         if direction == '+y':
-            categories = [c for c in ordering[start+1:]]
+            categories = [c for c in ordering[start+1:]] # All objects to the right of sinkbase
         else:
-            categories = [c for c in ordering[:start]][::-1]
+            categories = [c for c in ordering[:start]][::-1] # All objects to the left of sinkbase
         current = base
         for category in categories:
             adjust = {}  ## doors bump into neighbors and counters
@@ -1251,7 +1251,6 @@ def load_all_furniture(world, ordering, floor, base, start, color, wall_height,
         Supporter(create_box(w=WALL_WIDTH, l=l, h=wall_height, color=color), name='wall'),
         Pose(point=Point(x=x, y=y, z=wall_height/2)))
     # floor.adjust_pose(dx=x_lower - WALL_WIDTH)
-
     return counter_regions, tall_obstacles, adjust_y, x_lower, left_counter_lower, right_counter_upper
 
 
@@ -1385,7 +1384,6 @@ def sample_full_kitchen(world, verbose=True, pause=True, reachability_check=True
     dh_cabinets = 1.2 ## 0.8
     h_upper_cabinets = 0.768
     l_max_kitchen = 8
-
     under_counter = ['SinkBase', 'CabinetLower', 'DishwasherBox']
     on_base = ['MicrowaveHanging', 'MiniFridge']
     full_body = ['CabinetTall', 'Fridge', 'OvenCounter']
@@ -1411,7 +1409,6 @@ def sample_full_kitchen(world, verbose=True, pause=True, reachability_check=True
     counter_regions, tall_obstacles, adjust_y, x_lower, left_counter_lower, right_counter_upper = \
         load_all_furniture(world, ordering, floor, base, start, color, wall_height,
                            under_counter, on_base, full_body, tall_body)
-
     """ step 3: make all the counters """
     create_counter_top(world, counters, counter_regions, base, color,
                        counter_x, counter_z, counter_w, adjust_y, x_lower)
@@ -1442,6 +1439,70 @@ def sample_full_kitchen(world, verbose=True, pause=True, reachability_check=True
         set_renderer(True)
         wait_unlocked()
     return movables, counters
+
+
+
+def rag_sample_full_kitchen(world, verbose=True, pause=True, reachability_check=True,
+                        open_door_epsilon=0.5, make_doors_transparent=False):
+    h_lower_cabinets = 1
+    dh_cabinets = 1.2 ## 0.8
+    h_upper_cabinets = 0.768
+    l_max_kitchen = 8
+    under_counter = ['SinkBase', 'CabinetLower', 'DishwasherBox']
+    on_base = ['MicrowaveHanging', 'MiniFridge']
+    full_body = ['CabinetTall', 'Fridge', 'OvenCounter']
+    tall_body = ['CabinetTall', 'Fridge', 'MiniFridge']
+
+    ###############################################################
+
+    """ step 0: sample an ordering of lower furniture """
+    ordering = sample_kitchen_furniture_ordering()
+    while 'SinkBase' not in ordering:
+        ordering = sample_kitchen_furniture_ordering()
+
+    """ step 1: sample a sink """
+    start = ordering.index('SinkBase')
+    sink_y = l_max_kitchen * start / len(ordering) + np.random.normal(0, 0.5)
+    floor, base, counter_x, counter_w, counter_z, color, counters = \
+        sample_kitchen_sink(world, floor=floor, y=sink_y)
+
+    """ step 2: arrange furniture on the left and right of sink base, 
+                along with the extended counter """
+    wall_height = h_lower_cabinets + dh_cabinets + h_upper_cabinets + COUNTER_THICKNESS
+    counter_regions, tall_obstacles, adjust_y, x_lower, left_counter_lower, right_counter_upper = \
+        load_all_furniture(world, ordering, floor, base, start, color, wall_height,
+                           under_counter, on_base, full_body, tall_body)
+    """ step 3: make all the counters """
+    create_counter_top(world, counters, counter_regions, base, color,
+                       counter_x, counter_z, counter_w, adjust_y, x_lower)
+
+    """ step 4: put upper cabinets and shelves """
+    oven = world.name_to_object('OvenCounter')
+    cabinets, shelves = load_full_kitchen_upper_cabinets(world, counters, x_lower, left_counter_lower,
+                                                         right_counter_upper, others=[oven],
+                                                         dz=dh_cabinets, obstacles=tall_obstacles)
+
+    """ step 5: add additional surfaces in furniture """
+    sink = world.name_to_object('sink')
+    sink_bottom = world.add_surface_by_keyword(sink, 'sink_bottom')
+
+    """ step 6: place electronics and cooking appliances on counters """
+    x_food_min = base.aabb().upper[0] - 0.3
+    microwave, obstacles = load_cooking_appliances(world, ordering, counters, x_food_min, oven)
+    shelves += [microwave]
+
+    """ step 7: place electronics and cooking appliances on counters """
+    load_storage_spaces(world, epsilon=open_door_epsilon, make_doors_transparent=make_doors_transparent)
+
+    """ step 8: place movables on counters """
+    movables = load_movables(world, counters, shelves, obstacles, x_food_min, reachability_check)
+
+    set_camera_pose((4, 4, 3), (0, 4, 0))
+    if pause:
+        set_renderer(True)
+        wait_unlocked()
+    return movables, counters
+
 
 
 def make_sure_obstacles(world, case, movables, counters, objects, food=None):

@@ -46,13 +46,17 @@ def create_pr2_robot(world, base_q=(0, 0, 0), dual_arm=False, use_torso=True,
                      draw_base_limits=False, max_velocities=BASE_VELOCITIES, robot=None, **kwargs):
 
     if robot is None:
-        robot = create_pr2()
+        try:
+            from pybullet_tools.pr2_problems import create_pr2
+            robot = create_pr2()
+        except KeyError:
+            from examples.pybullet.utils.pybullet_tools.pr2_problems import create_pr2
+            robot = create_pr2()
         set_pr2_ready(robot, arm=PR2Robot.arms[0], dual_arm=dual_arm)
         if len(base_q) == 3:
             set_group_conf(robot, 'base', base_q)
         elif len(base_q) == 4:
             set_group_conf(robot, 'base-torso', base_q)
-
     with np.errstate(divide='ignore'):
         weights = np.reciprocal(resolutions)
 

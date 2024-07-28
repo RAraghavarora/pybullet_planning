@@ -494,7 +494,13 @@ def sample_obj_in_body_link_space(obj, body, link=None, PLACEMENT_ONLY=False,
         pose = Pose(point=Point(x=x, y=y, z=z), euler=Euler(yaw=yaw))
         set_pose(maybe, pose)
 
-        remove_handles(handles)
+        try:
+            from pybullet_tools.utils import remove_handles
+            remove_handles(handles)
+        except KeyError:
+            from examples.pybullet.utils.pybullet_tools.utils import remove_handles
+            # Go to pddlstream utils instead of pybullet_tools
+
         handles = draw_fitted_box(maybe)[-1] if draw else []
         return maybe, (x, y, z, yaw), handles
 
@@ -528,7 +534,12 @@ def sample_obj_in_body_link_space(obj, body, link=None, PLACEMENT_ONLY=False,
                 just_added = False
                 pose = Pose(point=Point(x=x, y=y, z=z), euler=Euler(yaw=yaw))
                 set_pose(maybe, pose)
-                remove_handles(handles)
+                try:
+                    from pybullet_tools.utils import remove_handles
+                    remove_handles(handles)
+                except KeyError:
+                    from examples.pybullet.utils.pybullet_tools.utils import remove_handles
+                    # Go to pddlstream utils instead of pybullet_tools
                 handles = draw_fitted_box(maybe)[-1] if draw else []
                 if verbose:
                     print(f'trying pose for {obj}: z - interval = {nice(z + interval)} - {interval}) = {nice(z)}')
@@ -539,7 +550,12 @@ def sample_obj_in_body_link_space(obj, body, link=None, PLACEMENT_ONLY=False,
             just_added = True
             pose = Pose(point=Point(x=x, y=y, z=z), euler=Euler(yaw=yaw))
             set_pose(maybe, pose)
-            remove_handles(handles)
+            try:
+                from pybullet_tools.utils import remove_handles
+                remove_handles(handles)
+            except KeyError:
+                from examples.pybullet.utils.pybullet_tools.utils import remove_handles
+                # Go to pddlstream utils instead of pybullet_tools
             handles = draw_fitted_box(maybe)[-1] if draw else []
             if verbose:
                 print(f'reset pose for {obj}: z + interval = {nice(z - interval)} + {interval}) = {nice(z)} | {reason}')
@@ -564,7 +580,13 @@ def sample_obj_in_body_link_space(obj, body, link=None, PLACEMENT_ONLY=False,
         return None
     maybe, (x, y, z, yaw), handles = result
 
-    remove_handles(handles)
+    try:
+        from pybullet_tools.utils import remove_handles
+        remove_handles(handles)
+    except KeyError:
+        from examples.pybullet.utils.pybullet_tools.utils import remove_handles
+        # Go to pddlstream utils instead of pybullet_tools
+
     #set_renderer(True)
     if PLACEMENT_ONLY: return x, y, z, yaw
     # print(nice(aabb2d_from_aabb(aabb)))
