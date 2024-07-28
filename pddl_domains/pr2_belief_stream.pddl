@@ -38,6 +38,7 @@
     :inputs (?q1 ?q2)
     :domain (and (BConf ?q1) (BConf ?q2))
     :outputs (?t)
+    ; :fluents (AtPose AtPosition AtAConf)
     :certified (and (BTraj ?t)
                     (BaseMotion ?q1 ?t ?q2))
   )

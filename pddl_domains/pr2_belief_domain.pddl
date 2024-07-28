@@ -24,6 +24,7 @@
     (AtPose ?o ?p)
     (AtGrasp ?a ?o ?g)
     (HandEmpty ?a)
+    (BConf ?q) ;;
     (AtBConf ?q)
     (AtConf ?a ?q) ; TODO: a single conf predicate
     (AtAConf ?a ?q) ;;
@@ -41,6 +42,13 @@
     (DefaultAConf ?a ?q) ;;
 
     (Controllable ?o) ;;
+    (Containable ?o ?r)
+    (Contained ?o ?p ?s) ;; aabb contains
+    (IsSampledPosition ?o ?p1 ?p2)  ;; to make planning more efficient
+    (Reach ?a ?o ?p ?g ?bq)
+    (Observable ?p)
+    (BTraj ?t)
+    (ATraj ?t)
 
     (Door ?o) ;;
     (Space ?r) ;; Storage space (ex, minifridge)
@@ -73,6 +81,8 @@
     (Placed ?o)
     (Pulled ?o)
     (StoredInSpace ?t ?r)
+    (UnsafePose ?o ?p)
+    (UnsafeApproach ?o ?p ?g)
   )
   (:functions
     (MoveCost)
@@ -105,10 +115,11 @@
     :parameters (?a ?o ?p ?g ?q ?t)
     :precondition (and (Kin ?a ?o ?p ?g ?q ?t)
                        (AtGrasp ?a ?o ?g) (AtBConf ?q)
-                       (Graspable ?o)
+                       (Graspable ?o) (not (UnsafePose ?o ?p))
+                       (not (UnsafeApproach ?o ?p ?g))
                        ) ; (Localized ?o)
     :effect (and (AtPose ?o ?p) (HandEmpty ?a) (CanMove)
-                 (not (AtGrasp ?a ?o ?g))
+                 (not (AtGrasp ?a ?o ?g)) (Placed ?o)
                  (increase (total-cost) (PlaceCost)))
   )
 
@@ -139,11 +150,6 @@
     (exists (?p) (and (Supported ?o ?p ?r)
                       (AtPose ?o ?p)))
   )
-  (:derived (Holding ?a ?o)
-    (exists (?g) (and (Arm ?a) (Grasp ?o ?g)
-                      (AtGrasp ?a ?o ?g)))
-  )
-
   (:derived (Holding ?a ?o)
     (exists (?g) (and (Arm ?a) (Grasp ?o ?g)
                       (AtGrasp ?a ?o ?g)))
@@ -219,4 +225,5 @@
                     )
       :effect (and (StoredInSpace ?t ?r))
     )
+
 )
