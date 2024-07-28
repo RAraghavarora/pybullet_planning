@@ -80,6 +80,8 @@ class Grasp(object):
         self.approach = tuple(approach)
         self.carry = tuple(carry)
     def get_attachment(self, robot, arm):
+        if not isinstance(robot, int):
+            robot = robot.body #R #TODO: why?
         tool_link = link_from_name(robot, PR2_TOOL_FRAMES[arm])
         return Attachment(robot, tool_link, self.value, self.body)
     def __repr__(self):

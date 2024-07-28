@@ -316,22 +316,22 @@ def make_nudge_grasps_from_handle_grasps(world, found_hand_grasps, body, body_po
     return [multiply(g, x) for g in found_hand_grasps]
 
 
-def get_hand_grasps(world, body, problem, link=None, grasp_length=0.1, visualize=False,
+def get_hand_grasps(world, body, link=None, grasp_length=0.1, visualize=False,
                     handle_filter=False, length_variants=False, use_all_grasps=True,
                     retain_all=False, verbose=True, collisions=False, debug_del=False,
                     test_offset=False, skip_grasp_index=None, nudge=False, nudge_back=False):
     body_name = (body, None, link) if link is not None else body
     title = f'grasp_utils.get_hand_grasps({body_name}) | '
     dist = grasp_length
-    robot = problem.robot
+    robot = world.robot
     scale = 1 if is_box_entity(body) else get_loaded_scale(body)
     # print("get hand grasps scale", scale)
     # using_grasp_link, link = check_grasp_link(world, body, link)
 
     body_pose = get_model_pose(body, link=link, verbose=verbose)
     aabb, handles = draw_fitted_box(body, link=link, verbose=verbose, draw_box=False, draw_centroid=False)
+
     ## grasp the whole body
-    link = None #R TODO: Added to work. idk why?
     if link is None:
         r = Pose(euler=Euler(math.pi / 2, 0, -math.pi / 2))
         body_pose = multiply(body_pose, invert(r))
@@ -340,24 +340,16 @@ def get_hand_grasps(world, body, problem, link=None, grasp_length=0.1, visualize
     else:
         tool_from_hand = robot.get_tool_from_hand(body_name)
         body_pose = multiply(body_pose, invert(tool_from_hand))
-    try:
-        instance_name = str(pybullet.getBodyInfo(body_name)[-1])
-    except TypeError:
-        instance_name = pybullet.getBodyInfo(body_name[0])[-1].decode('utf-8')
-    # instance_name = world.get_instance_name(body_name)
-    # name_in_db = None if instance_name is None else world.get_name(body_name, use_default_link_name=True)
-    name_in_db = 'handle'
-    instance_name = instance_name + '::handle'
+
+    instance_name = world.get_instance_name(body_name)
+    name_in_db = None if instance_name is None else world.get_name(body_name, use_default_link_name=True)
     if instance_name is not None:
-        grasp_db_file = get_grasp_db_file(robot='pr2', nudge=nudge, nudge_back=nudge_back)
-        if 'pddlstream' in grasp_db_file:
-            grasp_db_file = grasp_db_file.replace('pddlstream/examples/pybullet/utils', 'pybullet_planning')
+        grasp_db_file = get_grasp_db_file(robot, nudge=nudge, nudge_back=nudge_back)
         found, db = find_grasp_in_db(grasp_db_file, instance_name, verbose=verbose, scale=scale,
                                      length_variants=length_variants, use_all_grasps=use_all_grasps, world=world)
-        
         ## TODO: hack to hand adjust the found hand grasps to make nudge grasps
         if found is None and nudge:
-            found_hand_grasps, _ = find_grasp_in_db(get_grasp_db_file(robot='pr2'), instance_name, length_variants=length_variants,
+            found_hand_grasps, _ = find_grasp_in_db(get_grasp_db_file(robot), instance_name, length_variants=length_variants,
                                                     scale=scale, use_all_grasps=use_all_grasps, verbose=verbose)
             if found_hand_grasps is not None:
                 found = make_nudge_grasps_from_handle_grasps(world, found_hand_grasps, body, body_pose, nudge_back=nudge_back)
@@ -375,7 +367,6 @@ def get_hand_grasps(world, body, problem, link=None, grasp_length=0.1, visualize
     # if body not in obstacles:
     #     obstacles += [body]
     obstacles = [body]
-    import pdb; pdb.set_trace()
 
     ## only one in each direction
     def check_new(aabbs, aabb):
@@ -491,6 +482,7 @@ def get_hand_grasps(world, body, problem, link=None, grasp_length=0.1, visualize
     #     random.shuffle(grasps)
     #     return grasps[:num_samples]
     return grasps  ##[:1]
+
 
 
 def check_cfree_gripper(grasp, world, object_pose, obstacles, verbose=False, visualize=False, body=None,

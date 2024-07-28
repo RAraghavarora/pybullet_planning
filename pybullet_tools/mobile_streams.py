@@ -23,9 +23,9 @@ from pybullet_tools.grasp_utils import add_to_jp2jp
 
 def get_ir_sampler(problem, custom_limits={}, max_attempts=40, collisions=True,
                    learned=True, verbose=False, visualize=False):
-    robot = problem.robot_instance
-    # world = problem.world
-    world = None
+    robot = problem.world.robot
+    world = problem.world
+    # world = None
     obstacles = [o for o in problem.fixed if o not in problem.floors] if collisions else []
     grippers = {arm: problem.get_gripper(arm=arm) for arm in robot.arms}
     heading = f'   mobile_streams.get_ir_sampler | '
@@ -115,12 +115,12 @@ def get_ir_sampler(problem, custom_limits={}, max_attempts=40, collisions=True,
 
 def get_ik_fn_old(problem, custom_limits={}, collisions=True, teleport=False,
                   ACONF=False, verbose=False, visualize=False, resolution=DEFAULT_RESOLUTION):
-    robot = problem.robot_instance
-    # world = problem.world
-    world = None
+    robot = problem.world.robot
+    world = problem.world
+    # world = None
     obstacles = problem.fixed if collisions else []
-    # ignored_pairs = world.ignored_pairs
-    ignored_pairs = []
+    ignored_pairs = world.ignored_pairs
+    # ignored_pairs = []
     # world_saver = WorldSaver()
     title = 'mobile_streams.get_ik_fn_old:\t'
 
@@ -139,7 +139,7 @@ def get_ik_fn_old(problem, custom_limits={}, collisions=True, teleport=False,
             obstacles_here.extend([p[1] for p in fluents if p[0] in ['atpose', 'atrelpose'] if isinstance(p[1], int)])
         else:
             # world_saver.restore()
-            attachment = grasp.get_attachment(robot, arm, visualize=False)
+            attachment = grasp.get_attachment(robot, arm)
             attachments = {attachment.child: attachment}  ## {}  ## TODO: problem with having (body, joint) tuple
 
         if 'pstn' in str(pose):  ## isinstance(pose, Position):
@@ -147,7 +147,6 @@ def get_ik_fn_old(problem, custom_limits={}, collisions=True, teleport=False,
         else:
             pose_value = pose.value
         pose.assign()
-
         return solve_approach_ik(
             arm, obj, pose_value, grasp, base_conf,
             world, robot, custom_limits, obstacles_here, ignored_pairs_here, resolution=resolution,
@@ -204,9 +203,9 @@ def get_ik_gen_old(problem, max_attempts=80, collisions=True, learned=True, tele
                                 max_attempts=max_attempts, verbose=verbose, visualize=visualize, **kwargs)
     ik_fn = get_ik_fn_old(problem, collisions=collisions, teleport=teleport, verbose=False,
                           ACONF=ACONF, visualize=visualize, **kwargs)
-    robot = problem.robot_instance
-    # world = problem.world
-    world = None
+    robot = problem.world.robot
+    world = problem.world
+    # world = None
     obstacles = problem.fixed if collisions else []
     heading = 'mobile_streams.get_ik_gen | '
 
@@ -340,7 +339,7 @@ def sample_bconf(world, robot, inputs, pose_value, obstacles, heading,
 
     ## solve IK for all 13 joints
     if robot.use_torso and has_tracik():
-        from pybullet_tools.tracik import IKSolver
+        from examples.pybullet.utils.pybullet_tools.tracik import IKSolver
 
         grasp_pose = robot.get_grasp_pose(pose_value, g.value, a, body=g.body)
         tool_pose = robot.get_tool_pose_for_ik(a, grasp_pose)
@@ -538,7 +537,7 @@ def solve_approach_ik(arm, obj, pose_value, grasp, base_conf,
 
     approach_conf = None
     if has_tracik():
-        from pybullet_tools.tracik import IKSolver
+        from examples.pybullet.utils.pybullet_tools.tracik import IKSolver
         tool_link = robot.get_tool_link(arm)
         tool_pose = robot.get_tool_pose_for_ik(arm, approach_pose)
         ik_solver = IKSolver(robot.body, tool_link=tool_link, first_joint=arm_joints[0],
@@ -927,9 +926,9 @@ def get_pull_door_handle_motion_gen(problem, custom_limits={}, collisions=True, 
     visualize = visualize and has_gui()
     if teleport:
         num_intervals = 1
-    robot = problem.robot_instance
-    # world = problem.world
-    world = None
+    robot = problem.world.robot
+    world = problem.world
+    # world = None
     saver = BodySaver(robot)
     # world_saver = WorldSaver()
     obstacles = problem.fixed if collisions else []
@@ -991,10 +990,10 @@ def get_pull_door_handle_with_link_motion_gen(problem, custom_limits={}, collisi
 
 def get_arm_ik_fn(problem, custom_limits={}, resolution=DEFAULT_RESOLUTION,
                   collisions=True, teleport=False, verbose=False):
-    robot = problem.robot_instance
+    world = problem.world
+    robot = problem.world.robot
     obstacles = problem.fixed if collisions else []
-    # world = problem.world
-    world = None
+    # world = None
     world_saver = WorldSaver()
     title = 'mobile_streams.get_arm_ik_fn:\t'
 

@@ -582,18 +582,17 @@ def visualize_sampled_pstns(x_min, x_max, x_points):
     plt.show()
 
 
-def sample_joint_position_gen(world, num_samples=14, p_max=PI, to_close=False, visualize=False, verbose=True):
+def sample_joint_position_gen(problem, num_samples=14, p_max=PI, to_close=False, visualize=False, verbose=True):
     """ generate open positions if closed=False and closed positions if closed=True (deprecated) """
-    # world = problem.world
-
+    world = problem.world
     def fn(o, pstn1):
 
-        if world.learned_position_list_gen is not None:
-            pstns = world.learned_position_list_gen(world, o, pstn1, num_samples=num_samples)
-            if pstns is not None:
-                positions = [(Position(o, p),) for p in pstns]
-                for pstn in positions:
-                    yield pstn
+        # if world.learned_position_list_gen is not None:
+        #     pstns = world.learned_position_list_gen(world, o, pstn1, num_samples=num_samples)
+        #     if pstns is not None:
+        #         positions = [(Position(o, p),) for p in pstns]
+        #         for pstn in positions:
+        #             yield pstn
 
         is_drawer = pstn1.is_prismatic()
 
@@ -658,6 +657,8 @@ def sample_joint_position_gen(world, num_samples=14, p_max=PI, to_close=False, v
                 lower = lower_new if lower_new else lower
                 upper = upper_new if upper_new else upper
                 pstns.extend([np.random.uniform(lower, upper) for k in range(num_samples)])
+                if not pstns:
+                    import pdb; pdb.set_trace()
                 pstns = [pstn for pstn in pstns if abs(pstn) > abs(pstn1.value) + 0.3]
 
         pstns = [round(pstn, 3) for pstn in pstns]
@@ -669,8 +670,9 @@ def sample_joint_position_gen(world, num_samples=14, p_max=PI, to_close=False, v
             print(f'\tsample_joint_position_gen({o}, {pstn1.value}, closed={to_close}, p_max={p_max}) '
                   f'choosing from {pstns}, joint limits = [{round(x_min, 3)}, {round(x_max, 3)}]')
         random.shuffle(pstns)
+        if not pstns:
+            import pdb; pdb.set_trace()
         positions = [(Position(o, p), ) for p in pstns]
-
         for pstn2 in positions:
             yield pstn2
         # return positions
@@ -853,21 +855,18 @@ def get_handle_grasp_gen(problem, collisions=False, max_samples=2,
                          randomize=False, visualize=False, retain_all=False, verbose=False):
     collisions = True
     obstacles = problem.fixed if collisions else []
-    # world = problem.world
-    robot = problem.robot_instance
+    world = problem.world
+    robot = problem.world.robot
     title = 'general_streams.get_handle_grasp_gen |'
 
     def fn(body_joint):
         body, joint = body_joint
-        knobs = []
-        # is_knob = body_joint in world.cat_to_bodies('knob')
-        is_knob = body_joint in knobs
+        is_knob = body_joint in world.cat_to_bodies('knob')
+        # is_knob = body_joint in knobs
         handle_link = get_handle_link(body_joint, is_knob=is_knob)
         # print(f'{title} handle_link of body_joint {body_joint} is {handle_link}')
-        world = None
         grasps = get_hand_grasps(world, body, link=handle_link, handle_filter=True,
                                  visualize=visualize, retain_all=retain_all, length_variants=True, verbose=verbose)
-
         if verbose: print(f'\n{title} grasps =', [nice(g) for g in grasps])
 
         g_type = 'top'

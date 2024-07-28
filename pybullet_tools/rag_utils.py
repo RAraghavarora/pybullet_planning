@@ -5,7 +5,7 @@ from examples.pybullet.utils.pybullet_tools.utils import set_pose, get_pose, con
     set_configuration, ClientSaver, HideOutput, is_center_stable, add_body_name, draw_base_limits, VideoSaver, load_model, \
     create_box, BROWN, get_aabb, stable_z, Pose, Point, Euler, set_color, WHITE, RGBA
 from pybullet_tools.utils import get_aabb_extent, remove_body
-
+import pybullet
 
 DARK_GREEN = RGBA(35/255, 66/255, 0, 1)
 
@@ -76,6 +76,8 @@ def load_asset(category, x=0, y=0, yaw=0, floor=None, z=None, w=None, l=None, h=
 def get_scale_by_category(file=None, category=None, scale=1):
     from world_builder.asset_constants import MODEL_HEIGHTS, MODEL_SCALES, OBJ_SCALES
     cat = category.lower()
+    if cat == 'minifridge':
+        category = 'MiniFridge'
 
     ## general category-level
     if category is not None:
@@ -97,6 +99,7 @@ def get_scale_by_category(file=None, category=None, scale=1):
         else:
             parent = get_parent_category(category)
             if parent is None:
+                import pdb; pdb.set_trace()
                 print('\tcant find model scale', category, 'using default 1')
             elif parent in MODEL_SCALES:
                 scale = MODEL_SCALES[parent][category]
@@ -157,3 +160,11 @@ def get_model_scale(file, l=None, w=None, h=None, scale=1, category=None):
     remove_body(body)
 
     return scale
+
+def get_body_joint_position(body):
+    from pybullet_planning.pybullet_tools.utils import get_joint_position
+    from pybullet_tools.pr2_streams import Position
+    joint_positions = None
+    position = get_joint_position(body[0], body[1]) if joint_positions is None else joint_positions[body]
+    position = Position(body, position)
+    return position

@@ -8,6 +8,10 @@ from .utils import create_box, set_base_values, set_point, set_pose, get_pose, \
     get_box_geometry, get_cylinder_geometry, create_shape_array, unit_pose, Pose, \
     Point, LockRenderer, FLOOR_URDF, TABLE_URDF, add_data_path, TAN, set_color, BASE_LINK, remove_body
 
+from world_builder.entities import Object, Location, Floor, Supporter, Surface, Movable, \
+    Space, Steerable, Door
+
+
 LIGHT_GREY = (0.7, 0.7, 0.7, 1.)
 
 class Problem(object):
@@ -153,41 +157,159 @@ def stacking_problem(arm='left', grasp_type='top'):
 
 #######################################################
 
-def create_kitchen(w=.5, h=.7):
-    floor = create_floor()
+from world_builder.world import World
+def create_world(args):
+    return World(time_step=args.time_step, segment=args.segment, use_rel_pose=args.use_rel_pose)
 
+import numpy as np
+from robot_builder.robots import PR2Robot
+from pybullet_planning.robot_builder.robot_builders import set_pr2_ready
+from pybullet_tools.pr2_utils import set_group_conf
+from pybullet_tools.bullet_utils import BASE_LINK, BASE_RESOLUTIONS, draw_base_limits as draw_base_limits_bb, CAMERA_FRAME, CAMERA_MATRIX, EYE_FRAME, BASE_LIMITS
+import numpy as np
+from pybullet_tools.pr2_primitives import get_base_custom_limits
+from world_builder.entities import Camera
+def create_pr2_robot(robot=None, world=None, base_q=(0, 0, 0), dual_arm=False, resolutions=BASE_RESOLUTIONS, use_torso=True, custom_limits=BASE_LIMITS):
+    # copied from pybullet_planning
+    # robot = None
+    # if robot is None:
+    #     robot = create_pr2(use_drake=USE_DRAKE_PR2)
+    #     set_pr2_ready(robot, arm=PR2Robot.arms[0], dual_arm=dual_arm)
+    #     if len(base_q) == 3:
+    #         set_group_conf(robot, 'base', base_q)
+    #     elif len(base_q) == 4:
+    #         set_group_conf(robot, 'base-torso', base_q)
+    #     set_pose(robot, robot_pose)
+    #     set_configuration(robot, robot_conf)
+    with np.errstate(divide='ignore'):
+        weights = np.reciprocal(resolutions)
+
+    if isinstance(custom_limits, dict):
+        custom_limits = np.asarray(list(custom_limits.values())).T.tolist()
+
+    # if draw_base_limits:
+    #     draw_base_limits_bb(custom_limits)
+
+    robot = PR2Robot(robot, base_link=BASE_LINK,
+                     dual_arm=dual_arm, use_torso=use_torso,
+                     custom_limits=get_base_custom_limits(robot, custom_limits),
+                     resolutions=resolutions, weights=weights)
+    if world is not None:
+        world.add_robot(robot)
+    # print('initial base conf', get_group_conf(robot, 'base'))
+    # set_camera_target_robot(robot, FRONT=True)
+
+    camera = Camera(robot, camera_frame=CAMERA_FRAME, camera_matrix=CAMERA_MATRIX, max_depth=2.5, draw_frame=EYE_FRAME)
+    robot.cameras.append(camera)
+
+    ## don't show depth and segmentation data yet
+    # if args.camera: robot.cameras[-1].get_image(segment=args.segment)
+
+    return robot
+
+def create_kitchen(w=.5, h=.7, robot=None):
+    use_world = True
+    robot_builder_args = {
+        'robot_name': 'pr2', 
+        'draw_base_limits': True, 
+        'dual_arm': False, 
+        'self_collisions': False, 
+        'create_robot_fn': None, 
+        'custom_limits': ((0.7, -2, 0), (3, 10, 3)), 
+        'initial_xy': (2, 4)
+        }
+    from robot_builder.robot_builders import build_robot_from_args
+    args = {
+        'time_step': 0.05,
+        'segment': False,
+        'use_rel_pose': False
+    }
+    from argparse import Namespace
+    args = Namespace(**args)
+    world = create_world(args)
+    # robot2 = build_robot_from_args(world, **robot_builder_args)
+    custom_limits = ((0.7, -2, 0), (3, 10, 3))
+    robot_instance = create_pr2_robot(robot=robot, world=world, custom_limits=custom_limits)
+    from .rag_loaders_partnet_kitchen import sample_full_kitchen
+    # sample_full_kitchen(world)
+    floor = create_floor()
+    floor_instance = world.add_object(
+        Floor(floor),
+        )
     table = create_box(w, w, h, color=(.75, .75, .75, 1))
-    set_point(table, (2, 0, h/2))
+    table_instance = world.add_object(Object(table), Pose(point = Point(2,0,h/2)))
+    
+    # set_point(table, (2, 0, h/2))
 
     mass = 1
     #mass = 0.01
     #mass = 1e-6
     cabbage = create_box(.07, .07, .1, mass=mass, color=(0, 1, 0, 1))
+    set_point(cabbage, (2, 0, h + .1/2))
+    cabbage_instance = world.add_object(Movable(cabbage), Pose(point=Point(2,0,h+.1/2)))
     from .rag_utils import load_asset
     # cabbage, _, _ = load_asset('food', floor=floor, random_instance=True) #R Adding real cabbage leads to AssertionError?
     # cabbage = load_model(BLOCK_URDF, fixed_base=False)
-    set_point(cabbage, (2, 0, h + .1/2))
 
     # sink = create_box(w, w, h, color=(.25, .25, .75, 1))
     # set_point(sink, (0, 2, h/2))
 
     stove = create_box(w, w, h, color=(.75, .25, .25, 1))
     set_point(stove, (0, -2, h/2))
+    stove_instance = world.add_object(Object(stove), Pose(point=Point(0,-2,h/2)))
     # Added by Raghav
     import math
     from pybullet_planning.pybullet_tools.utils import wait_for_user
-    from examples.pybullet.utils.pybullet_tools.utils import Euler
+    from examples.pybullet.utils.pybullet_tools.utils import Euler, get_aabb, get_aabb_extent
 
-    minifridge, file, scale = load_asset('minifridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
+    if use_world:
+        from .rag_loaders_partnet_kitchen import load_all_furniture, load_storage_spaces
+        ordering = ['SinkBase', 'Minifridge']
+        base = table_instance
+        on_base=['Minifridge']
+        # under_counter=['MiniFridge']
+        under_counter=[]
+        full_body=[]
+        tall_body=[]
+        start=0
+        op = load_all_furniture(world, ordering, floor_instance, base, start, under_counter, on_base, full_body, tall_body)
+        load_storage_spaces(world, epsilon=0, make_doors_transparent=False)
+        minifridge_instance = world.name_to_object('minifridge')
+        minifridge = minifridge_instance.body
+    else:
+        minifridge, mf_file, scale = load_asset('minifridge', x=2, y=0, yaw=1.5*math.pi, floor=floor,
                     random_instance=False, verbose=True)
     pose = Pose(point=Point(x=0, y=2, z=h/2), euler=Euler(yaw=math.pi))
-    set_pose(minifridge, pose) 
+    set_pose(minifridge, pose)
 
+    ################## Add joints and storage space #########################
+    from pybullet_planning.world_builder.world_utils import get_partnet_semantics, get_partnet_spaces, get_partnet_doors
+    space = None
+    ## --- ADD EACH DOOR JOINT
+    # doors = get_partnet_doors(mf_file, minifridge)
+    # for b, j in doors:
+        # world.add_joint_object(b, j, 'door')
+        # obj.doors.append((b, j))
+        
+    ## --- ADD ONE SPACE TO BE PUT INTO
+    # spaces = get_partnet_spaces(mf_file, minifridge)
+    # for b, _, l in spaces:
+        # space = world.add_object(Space(b, l, name=f'storage'))  ## f'{obj.category}::storage'
+        # break
+    # return doors, space
+
+
+
+    # ly = get_aabb_extent(get_aabb(minifridge))[1]
+    # minifridge_base = load_asset('MiniFridgeBase', l=ly, yaw=math.pi, floor=floor,
+    #                    random_instance=True, verbose=False)
     # minifridge_region = create_box(.07, .07, .07, mass=mass, color=(0, 1, 0, 1))
     # set_point(minifridge_region, (-1, 6, h/2 + .1/2))
-
     sink = minifridge
-    return table, cabbage, sink, stove
+    if use_world:
+        return table, cabbage, sink, stove, world
+    else:
+        return table, cabbage, sink, stove
 
 #######################################################
 
