@@ -672,25 +672,25 @@ def load_counter_movables(world, counters, d_x_min=None, obstacles=[],
         obstacles.append(obj.body)
 
     ## add bottles
-    bottle_ids = []
-    for i in range(n_objects['bottle']):
-        kwargs = dict()
-        obj_cat = 'bottle'
-        if instances['bottle'] is not None:
-            kwargs['ins'] = instances['bottle'][i]
-        obj = place_on_counter(obj_cat)
-        # obj = ensure_cfree(obj, obstacles, obj_name='bottle', **kwargs)
-        bottle_ids.append(obj)
-        obstacles.append(obj.body)
+    # bottle_ids = []
+    # for i in range(n_objects['bottle']):
+    #     kwargs = dict()
+    #     obj_cat = 'bottle'
+    #     if instances['bottle'] is not None:
+    #         kwargs['ins'] = instances['bottle'][i]
+    #     obj = place_on_counter(obj_cat)
+    #     # obj = ensure_cfree(obj, obstacles, obj_name='bottle', **kwargs)
+    #     bottle_ids.append(obj)
+    #     obstacles.append(obj.body)
 
-    ## add medicine
-    medicine_ids = []
-    for i in range(n_objects['medicine']):
-        obj = place_on_counter('medicine')
-        # obj = ensure_cfree(obj, obstacles, obj_name='medicine')
-        # state = State(copy.deepcopy(world), gripper=state.gripper)
-        medicine_ids.append(obj)
-        obstacles.append(obj.body)
+    # ## add medicine
+    # medicine_ids = []
+    # for i in range(n_objects['medicine']):
+    #     obj = place_on_counter('medicine')
+    #     # obj = ensure_cfree(obj, obstacles, obj_name='medicine')
+    #     # state = State(copy.deepcopy(world), gripper=state.gripper)
+    #     medicine_ids.append(obj)
+    #     obstacles.append(obj.body)
 
     # ## add bowl
     # bowl_ids = []
@@ -724,7 +724,7 @@ def load_counter_movables(world, counters, d_x_min=None, obstacles=[],
     print('... finished loading movables in {}s'.format(round(time.time() - start, 2)))
     # world.summarize_all_objects()
     # wait_unlocked()
-    return food_ids, bottle_ids, medicine_ids ## , bowl_ids, mug_ids, pan_ids
+    return food_ids ## , bowl_ids, mug_ids, pan_ids
 
 
 def move_lid_away(world, counters, epsilon=1.0):
