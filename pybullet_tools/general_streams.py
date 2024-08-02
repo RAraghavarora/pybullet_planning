@@ -379,8 +379,8 @@ def get_contain_gen(problem, collisions=True, num_samples=20, verbose=False, rel
     from pybullet_tools.pr2_primitives import Pose
     from world_builder.entities import Object
     obstacles = problem.fixed if collisions else []
-    # world = problem.world
-    world = None #R for pr2 belief
+    world = problem.world
+    # world = None #R for pr2 belief
 
     def gen(body, space):
         title = f"  get_contain_gen({body}, {space}) |"
@@ -394,24 +394,24 @@ def get_contain_gen(problem, collisions=True, num_samples=20, verbose=False, rel
         else:
             spaces = [space]
 
-        # ## ------------------------------------------------
-        # if learned_sampling and world.learned_pose_list_gen is not None:
-        #     result = world.learned_pose_list_gen(world, body, spaces, num_samples=num_samples-5, verbose=verbose)
-        #     if result is not None:
-        #         for body_pose in result:
-        #             p = Pose(body, value=body_pose, support=space)
-        #             p.assign()
-        #             # coo = collided(body, obs, verbose=verbose,
-        #             #                tag='contain_gen_database', world=world)
-        #             # if not coo:
-        #             attempts += 1
-        #             if relpose:
-        #                 p = RelPose2(body, value=body_pose, support=space)
-        #             yield (p,)
+        ## ------------------------------------------------
+        if learned_sampling and world.learned_pose_list_gen is not None:
+            result = world.learned_pose_list_gen(world, body, spaces, num_samples=num_samples-5, verbose=verbose)
+            if result is not None:
+                for body_pose in result:
+                    p = Pose(body, value=body_pose, support=space)
+                    p.assign()
+                    # coo = collided(body, obs, verbose=verbose,
+                    #                tag='contain_gen_database', world=world)
+                    # if not coo:
+                    attempts += 1
+                    if relpose:
+                        p = RelPose2(body, value=body_pose, support=space)
+                    yield (p,)
 
-        #     if verbose:
-        #         print(title, 'sample without learned_pose_list_gen')
-        # ## ------------------------------------------------
+            if verbose:
+                print(title, 'sample without learned_pose_list_gen')
+        ## ------------------------------------------------
 
         if isinstance(space, int):
             print('trying to sample pose inside body', space)
@@ -469,6 +469,7 @@ def get_contain_list_gen(problem, collisions=True, num_samples=50, relpose=False
                 poses.append(pose)
             except StopIteration:
                 break
+        import pdb; pdb.set_trace()
         return poses
     return gen
 
@@ -1039,7 +1040,7 @@ def get_cfree_pose_pose_test(robot, collisions=True, visualize=False, **kwargs):
 def get_cfree_approach_pose_test(problem, collisions=True):
     """ PR2 version """
     # TODO: apply this before inverse kinematics as well
-    arm = problem.robot.arms[0]
+    arm = problem.world.robot.arms[0]
     gripper = problem.get_gripper()
 
     def test(b1, p1, g1, b2, p2):
