@@ -175,9 +175,16 @@ class Object(Index):
         if category is None:
             category = obj_name
 
-        obj = self.world.add_object(
-            Object(load_asset(obj_name.lower(), **kwargs), category=category, name=name)
-        )
+        try:
+            from world_builder.world_utils import load_asset
+            obj = self.world.add_object(
+                Object(load_asset(obj_name.lower(), **kwargs), category=category, name=name)
+            )
+        except KeyError:
+            from examples.pybullet.utils.pybullet_tools.rag_utils import load_asset
+            obj = self.world.add_object(
+                Object(load_asset(obj_name.lower(), **kwargs), category=category, name=name)
+            )
         self.world.put_on_surface(obj, surface=self.name, max_trial=max_trial)
         self.support_obj(obj)
         # set_renderer(True)

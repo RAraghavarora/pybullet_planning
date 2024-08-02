@@ -112,4 +112,14 @@
                       (UngraspHandle ?a ?o ?p2 ?g ?q2 ?aq)
                       (KinPullDoorHandle ?a ?o ?p1 ?p2 ?g ?q1 ?q2 ?bt ?aq))
   )
+  (:stream test-cfree-approach-pose
+    :inputs (?o1 ?p1 ?g1 ?o2 ?p2)
+    :domain (and (Pose ?o1 ?p1) (Grasp ?o1 ?g1) (Pose ?o2 ?p2))
+    :certified (CFreeApproachPose ?o1 ?p1 ?g1 ?o2 ?p2)
+  )
+  (:stream test-cfree-pose-pose
+    :inputs (?o1 ?p1 ?o2 ?p2)
+    :domain (and (Pose ?o1 ?p1) (Pose ?o2 ?p2))
+    :certified (CFreePosePose ?o1 ?p1 ?o2 ?p2)
+  )
 )

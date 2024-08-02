@@ -414,7 +414,10 @@ def get_file_by_category(category : str, random_instance : str | bool = False, s
                             sampled = True
                     if not sampled:
                         random.shuffle(paths)
-            file = join(paths[0], 'mobility.urdf')
+            if category.lower() == 'minifridge':
+                file = '/home2/raghav.arora/KW/assets/models/MiniFridge/12249/mobility.urdf'
+            else:
+                file = join(paths[0], 'mobility.urdf')
 
         ## for loading the digital twin of nvidia kitchen
         elif category == 'counter':
