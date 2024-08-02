@@ -230,7 +230,7 @@ def create_kitchen(w=.5, h=.7, robot=None):
     # robot2 = build_robot_from_args(world, **robot_builder_args)
     custom_limits = ((0.7, -2, 0), (3, 10, 3))
     robot_instance = create_pr2_robot(robot=robot, world=world, custom_limits=custom_limits)
-    from .rag_loaders_partnet_kitchen import sample_full_kitchen
+    from .rag_loaders_partnet_kitchen import sample_full_kitchen, load_counter_movables
     # sample_full_kitchen(world)
     floor = create_floor()
     floor_instance = world.add_object(
@@ -249,6 +249,7 @@ def create_kitchen(w=.5, h=.7, robot=None):
     cabbage_instance = world.add_object(Movable(cabbage), Pose(point=Point(2,0,h+.1/2)))
     from .rag_utils import load_asset
     # cabbage, _, _ = load_asset('food', floor=floor, random_instance=True) #R Adding real cabbage leads to AssertionError?
+    # cabbage_instance = world.add_object(Movable(cabbage), Pose(point=Point(2, 0.1, h+.1/2)))
     # cabbage = load_model(BLOCK_URDF, fixed_base=False)
 
     # sink = create_box(w, w, h, color=(.25, .25, .75, 1))
@@ -281,6 +282,13 @@ def create_kitchen(w=.5, h=.7, robot=None):
                     random_instance=False, verbose=True)
     pose = Pose(point=Point(x=0, y=2, z=h/2), euler=Euler(yaw=math.pi))
     set_pose(minifridge, pose)
+
+    minifridge_storage = world.name_to_object("minifridge::storage")
+    # minifridge_storage.place_obj(cabbage_instance)
+    counters = {
+        'food': [table_instance, minifridge_instance, stove_instance]
+    }
+    load_counter_movables(world, counters, d_x_min=0.3, obstacles=[], reachability_check=False)
 
     ################## Add joints and storage space #########################
     from pybullet_planning.world_builder.world_utils import get_partnet_semantics, get_partnet_spaces, get_partnet_doors
